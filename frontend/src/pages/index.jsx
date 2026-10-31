@@ -6,7 +6,7 @@ export { default as Login } from './auth/Login';
 export { default as Signup } from './auth/Signup';
 export { default as ForgotPassword } from './auth/ForgotPassword';
 export { default as ResetPassword } from './auth/ResetPassword';
-export const Users = placeholder('Staff users');                 // A
+export { default as Users } from './users/Users';
 export const CustomerList = placeholder('Customers');            // A
 export const CustomerDetail = placeholder('Customer');           // A
 export const Taxes = placeholder('Taxes');                       // A
