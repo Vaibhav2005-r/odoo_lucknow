@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { z } from 'zod';
+import { resumePeriodIndex } from '../lib/billing-core.js';
 
 const updateCustomerSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100).optional(),
@@ -172,4 +173,53 @@ test('Customer portal subscription query builder enforces customer isolation', (
   // Admin query can filter any customer or none
   const adminWhere = buildSubscriptionWhere(adminUser, { customerId: '999' });
   assert.equal(adminWhere.customerId, 999);
+});
+
+test('Plan capability rules enforcement (pausable and closable constraints)', () => {
+  const canPauseSubscription = (sub) => {
+    if (!sub.plan?.pausable) return { allowed: false, error: 'Plan is not pausable' };
+    if (sub.status !== 'ACTIVE') return { allowed: false, error: 'Only ACTIVE subscriptions can be paused' };
+    if (sub.isPaused) return { allowed: false, error: 'Already paused' };
+    return { allowed: true };
+  };
+
+  const canCloseSubscription = (sub) => {
+    if (!sub.plan?.closable) return { allowed: false, error: 'Plan is not closable' };
+    if (sub.status === 'CLOSED') return { allowed: false, error: 'Already closed' };
+    return { allowed: true };
+  };
+
+  // Pausable plan active sub
+  assert.deepEqual(canPauseSubscription({ plan: { pausable: true }, status: 'ACTIVE', isPaused: false }), { allowed: true });
+  // Non-pausable plan
+  assert.deepEqual(canPauseSubscription({ plan: { pausable: false }, status: 'ACTIVE', isPaused: false }), {
+    allowed: false,
+    error: 'Plan is not pausable',
+  });
+
+  // Closable plan active sub
+  assert.deepEqual(canCloseSubscription({ plan: { closable: true }, status: 'ACTIVE' }), { allowed: true });
+  // Non-closable plan
+  assert.deepEqual(canCloseSubscription({ plan: { closable: false }, status: 'ACTIVE' }), {
+    allowed: false,
+    error: 'Plan is not closable',
+  });
+});
+
+test('Subscription resumption recalculates period index skipping pause duration', () => {
+  // Subscription started on 2026-01-01, Monthly. Paused. Resumed on 2026-04-15.
+  const nextIdx = resumePeriodIndex(
+    {
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      billingPeriod: 'MONTHLY',
+      nextPeriodIndex: 1, // Jan period billed, paused during Feb
+    },
+    new Date('2026-04-15T00:00:00.000Z')
+  );
+
+  // Period 0: Jan 1
+  // Period 1: Feb 1
+  // Period 2: Mar 1
+  // Period 3: Apr 1 (starts before April 15, so next period to bill starts May 1 -> index 4)
+  assert.equal(nextIdx, 4);
 });

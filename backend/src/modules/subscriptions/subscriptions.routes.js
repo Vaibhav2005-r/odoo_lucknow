@@ -4,7 +4,7 @@ import { prisma } from '../../lib/prisma.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { paramId, paginate } from '../../lib/params.js';
 import { httpError } from '../../lib/http-error.js';
-import { todayIn, parseDate, canMove, SUBSCRIPTION_FLOW } from '../../lib/billing-core.js';
+import { todayIn, parseDate, canMove, SUBSCRIPTION_FLOW, resumePeriodIndex } from '../../lib/billing-core.js';
 import { env } from '../../config/env.js';
 import { activateDueSubscriptions } from './subscriptions.service.js';
 
@@ -233,6 +233,159 @@ router.post('/:id/accept-quote', requireAuth, async (req, res) => {
   });
 
   res.json({ data: finalSub, message: 'Quotation accepted successfully!' });
+});
+
+// POST /api/subscriptions/:id/pause - Pause an active subscription (if plan allows)
+router.post('/:id/pause', requireAuth, async (req, res) => {
+  const id = paramId(req);
+  const sub = await prisma.subscription.findUnique({
+    where: { id },
+    include: { customer: true, plan: true },
+  });
+  if (!sub) throw httpError(404, 'Subscription not found');
+
+  if (req.user.role === 'CUSTOMER') {
+    const isOwner =
+      req.user.customerId === sub.customerId ||
+      sub.customer?.userId === req.user.id ||
+      sub.customer?.email === req.user.email;
+    if (!isOwner) throw httpError(404, 'Subscription not found');
+  }
+
+  if (!sub.plan.pausable) {
+    throw httpError(400, 'This plan does not permit pausing subscriptions');
+  }
+  if (sub.status !== 'ACTIVE') {
+    throw httpError(400, 'Only active subscriptions can be paused');
+  }
+  if (sub.isPaused) {
+    throw httpError(400, 'Subscription is already paused');
+  }
+
+  const currentDate = today();
+  const updated = await prisma.$transaction(async (tx) => {
+    const s = await tx.subscription.update({
+      where: { id },
+      data: { isPaused: true, pausedAt: currentDate },
+    });
+    await tx.subscriptionLog.create({
+      data: {
+        subscriptionId: id,
+        action: 'PAUSED',
+        note: `Subscription paused by ${req.user.name}`,
+        userId: req.user.id,
+      },
+    });
+    return s;
+  });
+
+  res.json({ data: updated, message: 'Subscription paused successfully' });
+});
+
+// POST /api/subscriptions/:id/resume - Resume a paused subscription
+router.post('/:id/resume', requireAuth, async (req, res) => {
+  const id = paramId(req);
+  const sub = await prisma.subscription.findUnique({
+    where: { id },
+    include: { customer: true, plan: true },
+  });
+  if (!sub) throw httpError(404, 'Subscription not found');
+
+  if (req.user.role === 'CUSTOMER') {
+    const isOwner =
+      req.user.customerId === sub.customerId ||
+      sub.customer?.userId === req.user.id ||
+      sub.customer?.email === req.user.email;
+    if (!isOwner) throw httpError(404, 'Subscription not found');
+  }
+
+  if (!sub.isPaused) {
+    throw httpError(400, 'Subscription is not paused');
+  }
+
+  const currentDate = today();
+  const nextIdx = resumePeriodIndex(
+    {
+      startDate: sub.startDate,
+      billingPeriod: sub.plan.billingPeriod,
+      nextPeriodIndex: sub.nextPeriodIndex,
+    },
+    currentDate
+  );
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const s = await tx.subscription.update({
+      where: { id },
+      data: {
+        isPaused: false,
+        pausedAt: null,
+        nextPeriodIndex: nextIdx,
+      },
+    });
+    await tx.subscriptionLog.create({
+      data: {
+        subscriptionId: id,
+        action: 'RESUMED',
+        note: `Subscription resumed by ${req.user.name}`,
+        userId: req.user.id,
+      },
+    });
+    return s;
+  });
+
+  res.json({ data: updated, message: 'Subscription resumed successfully' });
+});
+
+// POST /api/subscriptions/:id/close - Close a subscription (if plan allows)
+router.post('/:id/close', requireAuth, async (req, res) => {
+  const id = paramId(req);
+  const sub = await prisma.subscription.findUnique({
+    where: { id },
+    include: { customer: true, plan: true },
+  });
+  if (!sub) throw httpError(404, 'Subscription not found');
+
+  if (req.user.role === 'CUSTOMER') {
+    const isOwner =
+      req.user.customerId === sub.customerId ||
+      sub.customer?.userId === req.user.id ||
+      sub.customer?.email === req.user.email;
+    if (!isOwner) throw httpError(404, 'Subscription not found');
+  }
+
+  if (!sub.plan.closable) {
+    throw httpError(400, 'This plan does not permit early closure');
+  }
+  if (sub.status === 'CLOSED') {
+    throw httpError(400, 'Subscription is already closed');
+  }
+
+  const reason = req.body?.reason?.trim() || `Closed by ${req.user.name}`;
+  const updated = await prisma.$transaction(async (tx) => {
+    const s = await tx.subscription.update({
+      where: { id },
+      data: {
+        status: 'CLOSED',
+        closedAt: new Date(),
+        closeReason: reason,
+        isPaused: false,
+        nextInvoiceDate: null,
+      },
+    });
+    await tx.subscriptionLog.create({
+      data: {
+        subscriptionId: id,
+        fromStatus: sub.status,
+        toStatus: 'CLOSED',
+        action: 'CLOSED',
+        note: reason,
+        userId: req.user.id,
+      },
+    });
+    return s;
+  });
+
+  res.json({ data: updated, message: 'Subscription closed successfully' });
 });
 
 export default router;
