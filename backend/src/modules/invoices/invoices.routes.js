@@ -108,6 +108,94 @@ router.get('/', validate(listQuerySchema, 'query'), async (req, res) => {
   });
 });
 
+// GET /api/invoices/export - Export filtered invoices as CSV
+router.get('/export', validate(listQuerySchema, 'query'), async (req, res, next) => {
+  try {
+    const q = req.valid.query;
+    const today = todayIn(env.APP_TZ);
+
+    const base = {
+      ...ownScope(req),
+      ...(q.customerId && isInternal(req) ? { customerId: q.customerId } : {}),
+      ...(q.subscriptionId ? { subscriptionId: q.subscriptionId } : {}),
+      ...(q.from || q.to ? {
+        invoiceDate: {
+          ...(q.from ? { gte: parseDate(q.from) } : {}),
+          ...(q.to ? { lte: parseDate(q.to) } : {}),
+        },
+      } : {}),
+      ...(q.search ? {
+        OR: [
+          { number: { contains: q.search, mode: 'insensitive' } },
+          { customer: { name: { contains: q.search, mode: 'insensitive' } } },
+        ],
+      } : {}),
+    };
+
+    let viewWhere = {};
+    if (q.view === 'DRAFT') viewWhere = { status: 'DRAFT' };
+    else if (q.view === 'OUTSTANDING') viewWhere = { status: 'CONFIRMED' };
+    else if (q.view === 'OVERDUE') viewWhere = { status: 'CONFIRMED', dueDate: { lt: today } };
+    else if (q.view === 'PAID') viewWhere = { status: 'PAID' };
+    else if (q.view === 'CANCELLED') viewWhere = { status: 'CANCELLED' };
+
+    const rows = await prisma.invoice.findMany({
+      where: { ...base, ...viewWhere },
+      orderBy: { invoiceDate: 'desc' },
+      include: {
+        customer: { select: { name: true, company: true } },
+      },
+    });
+
+    const headers = [
+      'Invoice Number',
+      'Customer',
+      'Company',
+      'Status',
+      'Invoice Date',
+      'Due Date',
+      'Subtotal',
+      'Discount',
+      'Untaxed',
+      'Tax',
+      'Total',
+      'Paid',
+      'Balance Due',
+    ];
+
+    const escape = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const csvRows = [headers.join(',')];
+
+    for (const r of rows) {
+      const invDate = r.invoiceDate ? r.invoiceDate.toISOString().slice(0, 10) : '';
+      const dueDate = r.dueDate ? r.dueDate.toISOString().slice(0, 10) : '';
+      const due = (Number(r.amountTotal) - Number(r.amountPaid)).toFixed(2);
+
+      csvRows.push([
+        escape(r.number),
+        escape(r.customer?.name),
+        escape(r.customer?.company || ''),
+        escape(r.status),
+        escape(invDate),
+        escape(dueDate),
+        escape(Number(r.amountSubtotal).toFixed(2)),
+        escape(Number(r.amountDiscount).toFixed(2)),
+        escape(Number(r.amountUntaxed).toFixed(2)),
+        escape(Number(r.amountTax).toFixed(2)),
+        escape(Number(r.amountTotal).toFixed(2)),
+        escape(Number(r.amountPaid).toFixed(2)),
+        escape(due),
+      ].join(','));
+    }
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="invoices.csv"');
+    res.send(csvRows.join('\r\n'));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/invoices/:id - Invoice detail view
 router.get('/:id', async (req, res) => {
   const id = paramId(req);

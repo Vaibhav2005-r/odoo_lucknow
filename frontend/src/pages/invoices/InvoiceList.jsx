@@ -16,6 +16,7 @@ import {
   Eye,
   CheckSquare,
   Square,
+  Download,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { inr, date, due } from '../../lib/format';
@@ -194,8 +195,8 @@ export default function InvoiceList() {
       </div>
 
       {/* Search and Filters */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-3">
+        <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -208,6 +209,19 @@ export default function InvoiceList() {
             className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            const params = new URLSearchParams({ view });
+            if (search.trim()) params.append('search', search.trim());
+            window.open(`/api/invoices/export?${params.toString()}`, '_blank');
+          }}
+          className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-sm shrink-0"
+          title="Export current view to CSV"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Export CSV
+        </button>
       </div>
 
       {/* Table Container */}

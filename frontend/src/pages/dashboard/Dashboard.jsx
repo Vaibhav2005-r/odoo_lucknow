@@ -16,6 +16,7 @@ import {
   Calendar,
   Layers,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -244,6 +245,22 @@ export default function Dashboard() {
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const p = new URLSearchParams({
+                from: customRange.from,
+                to: customRange.to,
+              });
+              if (selectedPlanId) p.append('planId', selectedPlanId);
+              window.open(`/api/reports/export-summary?${p.toString()}`, '_blank');
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors shadow-sm"
+            title="Download CSV report"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
           </button>
           <Link
             to="/app/billing"

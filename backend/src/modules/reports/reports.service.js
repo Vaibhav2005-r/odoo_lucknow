@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { fmtDate, todayIn, addDays } from '../../lib/billing-core.js';
 import { env } from '../../config/env.js';
+import { httpError } from '../../lib/http-error.js';
 
 // from / to are 'YYYY-MM-DD' strings (validated by zod). planId is a number or null.
 // ::int casts avoid BigInt (COUNT) in JSON; ::float8 turns NUMERIC into plain numbers.
@@ -89,4 +90,115 @@ export async function getExpiringSoon({ days = 30 } = {}) {
     orderBy: { expiryDate: 'asc' },
     take: 10,
   });
+}
+
+// Customer statement of account with chronological running balance and aging breakdown
+export async function getCustomerStatement(customerId) {
+  const cId = Number(customerId);
+  const today = todayIn(env.APP_TZ);
+
+  const [customer, invoices, payments] = await Promise.all([
+    prisma.customer.findUnique({
+      where: { id: cId },
+      select: { id: true, name: true, email: true, company: true, gstin: true, address: true },
+    }),
+    prisma.invoice.findMany({
+      where: { customerId: cId, status: { in: ['CONFIRMED', 'PAID'] } },
+      orderBy: { invoiceDate: 'asc' },
+      select: {
+        id: true,
+        number: true,
+        invoiceDate: true,
+        dueDate: true,
+        amountTotal: true,
+        amountPaid: true,
+        status: true,
+      },
+    }),
+    prisma.payment.findMany({
+      where: { invoice: { customerId: cId } },
+      orderBy: { paymentDate: 'asc' },
+      select: {
+        id: true,
+        receiptNumber: true,
+        paymentDate: true,
+        method: true,
+        amount: true,
+        invoice: { select: { id: true, number: true } },
+      },
+    }),
+  ]);
+
+  if (!customer) throw httpError(404, 'Customer not found');
+
+  // Build combined ledger
+  const transactions = [];
+  for (const inv of invoices) {
+    transactions.push({
+      date: inv.invoiceDate,
+      type: 'INVOICE',
+      ref: inv.number,
+      invoiceId: inv.id,
+      dueDate: inv.dueDate,
+      debit: Number(inv.amountTotal),
+      credit: 0,
+      status: inv.status,
+    });
+  }
+  for (const pay of payments) {
+    transactions.push({
+      date: pay.paymentDate,
+      type: 'PAYMENT',
+      ref: pay.receiptNumber || `PAY-${pay.id}`,
+      invoiceRef: pay.invoice?.number,
+      method: pay.method,
+      debit: 0,
+      credit: Number(pay.amount),
+    });
+  }
+
+  // Sort chronologically
+  transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  let runningBalance = 0;
+  for (const tx of transactions) {
+    runningBalance += (tx.debit - tx.credit);
+    tx.runningBalance = Math.round(runningBalance * 100) / 100;
+  }
+
+  // Calculate aging buckets for unpaid invoices
+  let current = 0;
+  let aging1to30 = 0;
+  let aging31to60 = 0;
+  let aging60Plus = 0;
+
+  for (const inv of invoices) {
+    const due = Number(inv.amountTotal) - Number(inv.amountPaid);
+    if (due <= 0) continue;
+
+    const diffDays = Math.floor((today.getTime() - new Date(inv.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) {
+      current += due;
+    } else if (diffDays <= 30) {
+      aging1to30 += due;
+    } else if (diffDays <= 60) {
+      aging31to60 += due;
+    } else {
+      aging60Plus += due;
+    }
+  }
+
+  return {
+    customer,
+    totalInvoiced: invoices.reduce((s, i) => s + Number(i.amountTotal), 0),
+    totalPaid: payments.reduce((s, p) => s + Number(p.amount), 0),
+    outstandingBalance: Math.max(0, runningBalance),
+    aging: {
+      current: Math.round(current * 100) / 100,
+      aging1to30: Math.round(aging1to30 * 100) / 100,
+      aging31to60: Math.round(aging31to60 * 100) / 100,
+      aging60Plus: Math.round(aging60Plus * 100) / 100,
+    },
+    ledger: transactions,
+  };
 }

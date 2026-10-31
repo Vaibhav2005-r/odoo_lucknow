@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Wallet, Filter, Calendar, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Wallet, Filter, Calendar, ChevronLeft, ChevronRight, Search, Download } from 'lucide-react';
 import { api } from '../../lib/api';
 import { inr, date } from '../../lib/format';
 
@@ -50,11 +50,28 @@ export default function PaymentList() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Payments</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Complete ledger of recorded customer collections and receipts.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Payments</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Complete ledger of recorded customer collections and receipts.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const params = new URLSearchParams();
+            if (methodFilter) params.append('method', methodFilter);
+            if (from) params.append('from', from);
+            if (to) params.append('to', to);
+            window.open(`/api/payments/export?${params.toString()}`, '_blank');
+          }}
+          className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-sm self-start sm:self-auto"
+          title="Download Payments CSV"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Export Payments CSV
+        </button>
       </div>
 
       {/* Filter Bar */}

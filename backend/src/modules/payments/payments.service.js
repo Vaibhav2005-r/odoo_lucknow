@@ -44,3 +44,74 @@ export async function recordPayment(invoiceId, input, userId) {
     return payment;
   });
 }
+
+// FIFO allocation of a lump-sum payment across customer's confirmed unpaid invoices
+export async function reconcileCustomerPayment({ customerId, amount, method, paymentDate, note }, userId) {
+  return prisma.$transaction(async (tx) => {
+    let unallocatedPaise = toPaise(amount);
+    if (unallocatedPaise <= 0) {
+      throw httpError(422, 'Payment amount must be greater than zero');
+    }
+
+    const invoices = await tx.invoice.findMany({
+      where: { customerId: Number(customerId), status: 'CONFIRMED' },
+      orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+    });
+
+    if (invoices.length === 0) {
+      throw httpError(404, 'No outstanding confirmed invoices found for this customer');
+    }
+
+    const createdPayments = [];
+
+    for (const inv of invoices) {
+      if (unallocatedPaise <= 0) break;
+
+      const duePaise = toPaise(inv.amountTotal) - toPaise(inv.amountPaid);
+      if (duePaise <= 0) continue;
+
+      const payAmountPaise = Math.min(unallocatedPaise, duePaise);
+
+      const payment = await tx.payment.create({
+        data: {
+          invoiceId: inv.id,
+          customerId: inv.customerId,
+          method,
+          amount: toRupees(payAmountPaise),
+          paymentDate: parseDate(paymentDate),
+          note: note ? `${note} (FIFO Auto-Reconciliation)` : 'FIFO Auto-Reconciliation',
+          recordedById: userId || null,
+        },
+      });
+
+      const newPaidPaise = toPaise(inv.amountPaid) + payAmountPaise;
+      const fullyPaid = newPaidPaise === toPaise(inv.amountTotal);
+
+      await tx.invoice.update({
+        where: { id: inv.id },
+        data: {
+          amountPaid: toRupees(newPaidPaise),
+          ...(fullyPaid ? { status: 'PAID', paidAt: new Date() } : {}),
+        },
+      });
+
+      createdPayments.push({
+        paymentId: payment.id,
+        invoiceId: inv.id,
+        invoiceNumber: inv.number,
+        allocatedAmount: toRupees(payAmountPaise),
+        remainingInvoiceDue: toRupees(duePaise - payAmountPaise),
+        status: fullyPaid ? 'PAID' : 'CONFIRMED',
+      });
+
+      unallocatedPaise -= payAmountPaise;
+    }
+
+    return {
+      totalAllocated: toRupees(toPaise(amount) - unallocatedPaise),
+      unallocatedRemainder: toRupees(unallocatedPaise),
+      reconciledInvoicesCount: createdPayments.length,
+      allocations: createdPayments,
+    };
+  });
+}
