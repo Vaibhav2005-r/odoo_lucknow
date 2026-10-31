@@ -53,34 +53,31 @@ export default function SubscriptionDetail() {
   const [newAddonQty, setNewAddonQty] = useState(1);
   const [newAddonPrice, setNewAddonPrice] = useState('');
 
-  const loadSubscription = () => {
+  const loadSubscription = async () => {
     try {
       setLoading(true);
-      const sub = subscriptionService.getById(id);
-      if (!sub) {
-        toast.error('Subscription not found');
-        navigate('/app/subscriptions');
-        return;
-      }
+      const [sub, prods] = await Promise.all([
+        subscriptionService.getById(id),
+        productService.getAll({ status: 'ACTIVE' }),
+      ]);
       setSubscription(sub);
 
-      // Default next expiry for renew modal
+      // Default next expiry for renew modal: one more year
       if (sub.expiryDate) {
-        const nextYear = new Date(new Date(sub.expiryDate).getTime() + 365 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .slice(0, 10);
-        setNewExpiryDate(nextYear);
+        const d = new Date(`${sub.expiryDate}T00:00:00Z`);
+        d.setUTCFullYear(d.getUTCFullYear() + 1);
+        setNewExpiryDate(d.toISOString().slice(0, 10));
       }
 
-      const prods = productService.getAll({ status: 'ACTIVE' });
       setAvailableProducts(prods);
-      if (prods.length > 0) {
-        const defaultProd = prods.find((p) => p.type === 'ADDON') || prods[0];
+      const defaultProd = prods.find((p) => p.type === 'ADDON') || prods[0];
+      if (defaultProd) {
         setNewAddonId(defaultProd.id);
         setNewAddonPrice(defaultProd.salesPrice);
       }
-    } catch {
-      toast.error('Error fetching subscription details');
+    } catch (err) {
+      toast.error(err.message || 'Error fetching subscription details');
+      if (err.status === 404) navigate('/app/subscriptions');
     } finally {
       setLoading(false);
     }
@@ -90,71 +87,37 @@ export default function SubscriptionDetail() {
     loadSubscription();
   }, [id]);
 
-  // Lifecycle State Transitions
-  const handleSendQuotation = () => {
+  // Runs one lifecycle call and swaps in the fresh subscription the server returns.
+  const run = async (fn, successMessage, after) => {
     try {
-      const updated = subscriptionService.sendQuotation(subscription.id);
-      setSubscription(updated);
-      toast.success('Quotation dispatched to client!');
+      setSubscription(await fn());
+      if (after) after();
+      if (successMessage) toast.success(successMessage);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.message || 'Action failed');
     }
   };
 
-  const handleConfirm = () => {
-    try {
-      const updated = subscriptionService.confirm(subscription.id);
-      setSubscription(updated);
-      toast.success('Subscription confirmed!');
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
-
-  const handleActivate = () => {
-    try {
-      const updated = subscriptionService.activate(subscription.id);
-      setSubscription(updated);
-      toast.success('Subscription activated! Initial invoice created.');
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
-
-  const handlePause = () => {
-    try {
-      const updated = subscriptionService.pause(subscription.id);
-      setSubscription(updated);
-      toast.success('Subscription paused. Billing schedule put on hold.');
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
-
-  const handleResume = () => {
-    try {
-      const updated = subscriptionService.resume(subscription.id);
-      setSubscription(updated);
-      toast.success('Subscription resumed! Billing schedule re-activated.');
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
+  const handleSendQuotation = () =>
+    run(() => subscriptionService.sendQuotation(subscription.id), 'Quotation dispatched to client!');
+  const handleConfirm = () => run(() => subscriptionService.confirm(subscription.id), 'Subscription confirmed!');
+  const handleActivate = () =>
+    run(() => subscriptionService.activate(subscription.id), 'Subscription activated! Initial invoice created.');
+  const handlePause = () =>
+    run(() => subscriptionService.pause(subscription.id), 'Subscription paused. Billing schedule put on hold.');
+  const handleResume = () =>
+    run(() => subscriptionService.resume(subscription.id), 'Subscription resumed! Billing schedule re-activated.');
 
   const handleClose = (e) => {
     e.preventDefault();
-    try {
-      const updated = subscriptionService.close(
-        subscription.id,
-        closeReason || 'Customer requested termination'
-      );
-      setSubscription(updated);
-      setShowCloseModal(false);
-      setCloseReason('');
-      toast.success('Subscription closed.');
-    } catch (err) {
-      toast.error(err.message);
-    }
+    return run(
+      () => subscriptionService.close(subscription.id, closeReason || 'Customer requested termination'),
+      'Subscription closed.',
+      () => {
+        setShowCloseModal(false);
+        setCloseReason('');
+      },
+    );
   };
 
   const handleRenew = (e) => {
@@ -163,57 +126,38 @@ export default function SubscriptionDetail() {
       toast.error('Select a valid new expiration date');
       return;
     }
-    try {
-      const updated = subscriptionService.renew(subscription.id, newExpiryDate);
-      setSubscription(updated);
-      setShowRenewModal(false);
-      toast.success(`Subscription renewed until ${date(newExpiryDate)}!`);
-    } catch (err) {
-      toast.error(err.message);
-    }
+    return run(
+      () => subscriptionService.renew(subscription.id, newExpiryDate),
+      `Subscription renewed until ${date(newExpiryDate)}!`,
+      () => setShowRenewModal(false),
+    );
   };
 
   // Line Items Operations
-  const handleToggleAddon = (lineId, currentActive) => {
-    try {
-      const updated = subscriptionService.toggleAddon(subscription.id, lineId, !currentActive);
-      setSubscription(updated);
-      toast.success(`Add-on ${!currentActive ? 'enabled' : 'disabled'}`);
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
+  const handleToggleAddon = (lineId, currentActive) =>
+    run(
+      () => subscriptionService.toggleAddon(subscription.id, lineId, !currentActive),
+      `Add-on ${!currentActive ? 'enabled' : 'disabled'}`,
+    );
 
-  const handleRemoveAddon = (lineId) => {
-    try {
-      const updated = subscriptionService.removeAddon(subscription.id, lineId);
-      setSubscription(updated);
-      toast.success('Add-on removed from subscription');
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
+  const handleRemoveAddon = (lineId) =>
+    run(() => subscriptionService.removeAddon(subscription.id, lineId), 'Add-on removed from subscription');
 
   const handleAddAddon = (e) => {
     e.preventDefault();
     const prod = availableProducts.find((p) => p.id === Number(newAddonId));
     if (!prod) return;
-
-    try {
-      const updated = subscriptionService.addAddon(subscription.id, {
-        productId: prod.id,
-        name: prod.name,
-        quantity: Number(newAddonQty) || 1,
-        unitPrice: Number(newAddonPrice) || prod.salesPrice,
-        taxRate: prod.taxes?.[0]?.rate || 18,
-        taxName: prod.taxes?.[0]?.name || 'GST 18%',
-      });
-      setSubscription(updated);
-      setShowAddAddonModal(false);
-      toast.success(`Attached "${prod.name}" successfully!`);
-    } catch (err) {
-      toast.error(err.message);
-    }
+    const price = Number(newAddonPrice);
+    return run(
+      () =>
+        subscriptionService.addAddon(subscription.id, {
+          productId: prod.id,
+          quantity: Number(newAddonQty) || 1,
+          ...(price >= 0 && price !== prod.salesPrice ? { unitPrice: price } : {}),
+        }),
+      `Attached "${prod.name}" successfully!`,
+      () => setShowAddAddonModal(false),
+    );
   };
 
   if (loading) {
@@ -350,6 +294,7 @@ export default function SubscriptionDetail() {
 
             {subscription.status === 'ACTIVE' && (
               <>
+                {subscription.planPausable && (
                 <button
                   onClick={handlePause}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
@@ -357,6 +302,8 @@ export default function SubscriptionDetail() {
                   <PauseCircle className="h-3.5 w-3.5 text-slate-500" />
                   <span>Pause Billing</span>
                 </button>
+                )}
+                {subscription.planRenewable && (
                 <button
                   onClick={() => setShowRenewModal(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-lg text-xs font-semibold border border-brand-200 transition"
@@ -364,6 +311,8 @@ export default function SubscriptionDetail() {
                   <RefreshCw className="h-3.5 w-3.5" />
                   <span>Renew Term</span>
                 </button>
+                )}
+                {subscription.planClosable && (
                 <button
                   onClick={() => setShowCloseModal(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold border border-rose-200 transition"
@@ -371,6 +320,7 @@ export default function SubscriptionDetail() {
                   <XCircle className="h-3.5 w-3.5" />
                   <span>Close</span>
                 </button>
+                )}
               </>
             )}
 
@@ -383,6 +333,7 @@ export default function SubscriptionDetail() {
                   <PlayCircle className="h-3.5 w-3.5" />
                   <span>Resume Subscription</span>
                 </button>
+                {subscription.planClosable && (
                 <button
                   onClick={() => setShowCloseModal(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold border border-rose-200 transition"
@@ -390,6 +341,7 @@ export default function SubscriptionDetail() {
                   <XCircle className="h-3.5 w-3.5" />
                   <span>Close</span>
                 </button>
+                )}
               </>
             )}
 

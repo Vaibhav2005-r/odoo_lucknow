@@ -23,7 +23,7 @@ import toast from 'react-hot-toast';
 import { templateService, calculateLineTotals } from '../../services/templateService';
 import { planService } from '../../services/planService';
 import { productService } from '../../services/productService';
-import { DEFAULT_PAYMENT_TERMS, DEFAULT_TAXES } from '../../services/dataDefaults';
+import { referenceService } from '../../services/referenceService';
 import { inr } from '../../lib/format';
 
 export default function Templates() {
@@ -53,22 +53,23 @@ export default function Templates() {
     lines: [],
   });
 
-  const loadData = () => {
+  const [terms, setTerms] = useState([]);
+
+  const loadData = async () => {
     try {
       setLoading(true);
-      const data = templateService.getAll({
-        search,
-        status: statusFilter,
-      });
+      const [data, allPlans, allProducts, allTerms] = await Promise.all([
+        templateService.getAll({ search, status: statusFilter }),
+        planService.getAll({ status: 'ACTIVE' }),
+        productService.getAll({ status: 'ACTIVE' }),
+        referenceService.paymentTerms(),
+      ]);
       setTemplates(data);
-
-      const allPlans = planService.getAll({ status: 'ACTIVE' });
       setPlans(allPlans);
-
-      const allProducts = productService.getAll({ status: 'ACTIVE' });
       setProducts(allProducts);
-    } catch {
-      toast.error('Failed to load quotation templates');
+      setTerms(allTerms);
+    } catch (err) {
+      toast.error(err.message || 'Failed to load quotation templates');
     } finally {
       setLoading(false);
     }
@@ -78,30 +79,39 @@ export default function Templates() {
     loadData();
   }, [search, statusFilter]);
 
+  // Same rule the server uses: plan price for the plan's own product, list price otherwise, plus the variant extra.
+  const linePrice = (line) => {
+    const prod = products.find((p) => p.id === Number(line.productId));
+    if (!prod) return Number(line.unitPrice) || 0;
+    const plan = plans.find((p) => p.id === Number(formData.planId));
+    const base = plan && plan.productId === prod.id ? plan.price : prod.salesPrice;
+    const extra = prod.variants?.find((v) => v.id === Number(line.variantId))?.extraPrice || 0;
+    return Math.round((base + extra) * 100) / 100;
+  };
+  const lineTaxRate = (line) => {
+    const prod = products.find((p) => p.id === Number(line.productId));
+    return prod ? prod.taxes.reduce((a, t) => a + t.rate, 0) : Number(line.taxRate) || 0;
+  };
+  const blankLine = (prod) => ({
+    id: Date.now() + Math.random(),
+    productId: prod.id,
+    variantId: null,
+    productName: prod.name,
+    quantity: 1,
+    discountPercent: 0,
+  });
+
   const resetForm = () => {
     const firstPlan = plans[0];
     const firstProd = products[0];
 
-    const initialLine = firstProd
-      ? [
-          {
-            id: Date.now(),
-            productId: firstProd.id,
-            productName: firstProd.name,
-            description: firstProd.description || firstProd.name,
-            quantity: 1,
-            unitPrice: firstProd.salesPrice,
-            taxRate: 18,
-            discountPercent: 0,
-          },
-        ]
-      : [];
+    const initialLine = firstProd ? [blankLine(firstProd)] : [];
 
     setFormData({
       name: '',
       description: '',
       planId: firstPlan?.id || '',
-      paymentTermId: 2,
+      paymentTermId: terms.find((t) => t.dueDays === 15)?.id || terms[0]?.id || '',
       validityDays: 30,
       isActive: true,
       lines: initialLine,
@@ -120,7 +130,7 @@ export default function Templates() {
       name: tpl.name,
       description: tpl.description || '',
       planId: tpl.planId,
-      paymentTermId: tpl.paymentTermId || 2,
+      paymentTermId: tpl.paymentTermId || terms[0]?.id || '',
       validityDays: tpl.validityDays || 30,
       isActive: tpl.isActive,
       lines: tpl.lines ? JSON.parse(JSON.stringify(tpl.lines)) : [],
@@ -130,18 +140,11 @@ export default function Templates() {
 
   // Line item manipulation
   const handleAddLine = () => {
-    const defaultProduct = products[0];
-    const newLine = {
-      id: Date.now(),
-      productId: defaultProduct?.id || 1,
-      productName: defaultProduct?.name || 'Item',
-      description: defaultProduct?.name || '',
-      quantity: 1,
-      unitPrice: defaultProduct?.salesPrice || 0,
-      taxRate: 18,
-      discountPercent: 0,
-    };
-    setFormData({ ...formData, lines: [...formData.lines, newLine] });
+    if (!products[0]) {
+      toast.error('Create a product first');
+      return;
+    }
+    setFormData({ ...formData, lines: [...formData.lines, blankLine(products[0])] });
   };
 
   const handleRemoveLine = (index) => {
@@ -159,14 +162,13 @@ export default function Templates() {
     if (!prod) return;
 
     const updated = [...formData.lines];
-    updated[index] = {
-      ...updated[index],
-      productId: numId,
-      productName: prod.name,
-      description: prod.name,
-      unitPrice: prod.salesPrice,
-      taxRate: prod.taxes?.[0]?.rate || 18,
-    };
+    updated[index] = { ...updated[index], productId: numId, variantId: null, productName: prod.name };
+    setFormData({ ...formData, lines: updated });
+  };
+
+  const handleLineVariantChange = (index, variantId) => {
+    const updated = [...formData.lines];
+    updated[index] = { ...updated[index], variantId: variantId ? Number(variantId) : null };
     setFormData({ ...formData, lines: updated });
   };
 
@@ -174,17 +176,19 @@ export default function Templates() {
     const updated = [...formData.lines];
     updated[index] = {
       ...updated[index],
-      [field]: field === 'description' ? value : Number(value) || 0,
+      [field]: Math.max(1, Number(value) || 1),
     };
     setFormData({ ...formData, lines: updated });
   };
 
   // Real-time calculated totals for modal and preview
-  const liveTotals = useMemo(() => {
-    return calculateLineTotals(formData.lines);
-  }, [formData.lines]);
+  const pricedLines = useMemo(
+    () => formData.lines.map((l) => ({ ...l, unitPrice: linePrice(l), taxRate: lineTaxRate(l) })),
+    [formData.lines, formData.planId, products, plans],
+  );
+  const liveTotals = useMemo(() => calculateLineTotals(pricedLines), [pricedLines]);
 
-  const handleSaveTemplate = (e) => {
+  const handleSaveTemplate = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
       toast.error('Template name is required');
@@ -199,16 +203,11 @@ export default function Templates() {
       return;
     }
 
-    const planObj = plans.find((p) => p.id === Number(formData.planId));
-    const termObj = DEFAULT_PAYMENT_TERMS.find((t) => t.id === Number(formData.paymentTermId));
-
     const payload = {
       name: formData.name.trim(),
       description: formData.description.trim(),
       planId: Number(formData.planId),
-      planName: planObj?.name || 'Standard Plan',
-      paymentTermId: Number(formData.paymentTermId),
-      paymentTermName: termObj?.name || 'Immediate',
+      paymentTermId: formData.paymentTermId ? Number(formData.paymentTermId) : null,
       validityDays: Number(formData.validityDays) || 30,
       isActive: formData.isActive,
       lines: formData.lines,
@@ -216,10 +215,10 @@ export default function Templates() {
 
     try {
       if (editingTemplate) {
-        templateService.update(editingTemplate.id, payload);
+        await templateService.update(editingTemplate.id, payload);
         toast.success(`Template "${payload.name}" updated successfully`);
       } else {
-        templateService.create(payload);
+        await templateService.create(payload);
         toast.success(`Template "${payload.name}" created successfully`);
       }
       setShowModal(false);
@@ -230,24 +229,25 @@ export default function Templates() {
     }
   };
 
-  const handleToggleStatus = (id, name) => {
+  const handleToggleStatus = async (id, name) => {
     try {
-      const updated = templateService.toggleActive(id);
+      const updated = await templateService.toggleActive(id);
       toast.success(`"${name}" is now ${updated.isActive ? 'Active' : 'Inactive'}`);
       loadData();
-    } catch {
-      toast.error('Failed to update template status');
+    } catch (err) {
+      toast.error(err.message || 'Failed to update template status');
     }
   };
 
-  const handleDeleteTemplate = (id) => {
+  const handleDeleteTemplate = async (id) => {
     try {
-      templateService.delete(id);
+      await templateService.delete(id);
       toast.success('Quotation template deleted');
       setDeleteConfirmId(null);
       loadData();
-    } catch {
-      toast.error('Failed to delete template');
+    } catch (err) {
+      setDeleteConfirmId(null);
+      toast.error(err.message || 'Failed to delete template');
     }
   };
 
@@ -634,7 +634,7 @@ export default function Templates() {
                     onChange={(e) => setFormData({ ...formData, paymentTermId: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                   >
-                    {DEFAULT_PAYMENT_TERMS.map((t) => (
+                    {terms.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.name} ({t.dueDays} days due)
                       </option>
@@ -688,7 +688,7 @@ export default function Templates() {
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">Line Item Builder</h3>
                     <p className="text-xs text-slate-500">
-                      Configure products, custom descriptions, quantities, discounts, and tax rates.
+                      Choose products, optional variants (such as brand) and quantities. Prices and taxes come from the catalog.
                     </p>
                   </div>
                   <button
@@ -707,20 +707,21 @@ export default function Templates() {
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
                       <tr>
                         <th className="py-2.5 px-3 w-56">Product</th>
-                        <th className="py-2.5 px-3">Description</th>
+                        <th className="py-2.5 px-3">Variant</th>
                         <th className="py-2.5 px-2 text-center w-16">Qty</th>
                         <th className="py-2.5 px-3 text-right w-24">Price (₹)</th>
-                        <th className="py-2.5 px-2 text-center w-20">Disc %</th>
                         <th className="py-2.5 px-3 text-right w-24">Total</th>
                         <th className="py-2.5 px-2 text-right w-10"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {formData.lines.map((line, idx) => {
+                      {pricedLines.map((line, idx) => {
                         const lineSub = line.quantity * line.unitPrice;
-                        const lineDisc = lineSub * ((line.discountPercent || 0) / 100);
-                        const lineTax = (lineSub - lineDisc) * ((line.taxRate || 18) / 100);
-                        const lineTotal = lineSub - lineDisc + lineTax;
+                        const lineTax = lineSub * (line.taxRate / 100);
+                        const lineTotal = lineSub + lineTax;
+                        const prodVariants = (products.find((p) => p.id === Number(line.productId))?.variants || []).filter(
+                          (v) => v.isActive,
+                        );
 
                         return (
                           <tr key={line.id || idx} className="hover:bg-slate-50/75">
@@ -738,13 +739,20 @@ export default function Templates() {
                               </select>
                             </td>
                             <td className="py-2 px-3">
-                              <input
-                                type="text"
-                                value={line.description}
-                                onChange={(e) => handleLineFieldChange(idx, 'description', e.target.value)}
-                                placeholder="Custom note..."
-                                className="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
-                              />
+                              <select
+                                value={line.variantId || ''}
+                                onChange={(e) => handleLineVariantChange(idx, e.target.value)}
+                                disabled={prodVariants.length === 0}
+                                className="w-full px-2 py-1 border border-slate-300 rounded bg-white text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-slate-50 disabled:text-slate-400"
+                              >
+                                <option value="">{prodVariants.length ? 'No variant' : 'None available'}</option>
+                                {prodVariants.map((v) => (
+                                  <option key={v.id} value={v.id}>
+                                    {v.attribute}: {v.value}
+                                    {v.extraPrice ? ` (+${v.extraPrice})` : ''}
+                                  </option>
+                                ))}
+                              </select>
                             </td>
                             <td className="py-2 px-2 text-center">
                               <input
@@ -756,24 +764,7 @@ export default function Templates() {
                               />
                             </td>
                             <td className="py-2 px-3 text-right">
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={line.unitPrice}
-                                onChange={(e) => handleLineFieldChange(idx, 'unitPrice', e.target.value)}
-                                className="w-20 px-1.5 py-1 text-right border border-slate-300 rounded font-semibold text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
-                              />
-                            </td>
-                            <td className="py-2 px-2 text-center">
-                              <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                value={line.discountPercent}
-                                onChange={(e) => handleLineFieldChange(idx, 'discountPercent', e.target.value)}
-                                className="w-14 px-1.5 py-1 text-center border border-slate-300 rounded text-xs text-emerald-600 font-semibold focus:outline-none focus:ring-1 focus:ring-brand-500"
-                              />
+                              <span className="font-semibold text-slate-700">{inr(line.unitPrice)}</span>
                             </td>
                             <td className="py-2 px-3 text-right font-bold text-slate-900">
                               {inr(lineTotal)}

@@ -47,6 +47,8 @@ export default function Plans() {
     price: '',
     billingPeriod: 'MONTHLY',
     minQuantity: 1,
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: '',
     description: '',
     autoClose: false,
     closable: true,
@@ -55,24 +57,22 @@ export default function Plans() {
     isActive: true,
   });
 
-  const loadData = () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const data = planService.getAll({
-        search,
-        period: periodFilter,
-        status: statusFilter,
-      });
+      const [data, st, allProducts] = await Promise.all([
+        planService.getAll({ search, period: periodFilter, status: statusFilter }),
+        planService.getStats(),
+        productService.getAll({ status: 'ACTIVE' }),
+      ]);
       setPlans(data);
-      setStats(planService.getStats());
-
-      const allProducts = productService.getAll();
+      setStats(st);
       setProducts(allProducts);
       if (!formData.productId && allProducts.length > 0) {
         setFormData((prev) => ({ ...prev, productId: allProducts[0].id }));
       }
-    } catch {
-      toast.error('Failed to load subscription plans');
+    } catch (err) {
+      toast.error(err.message || 'Failed to load subscription plans');
     } finally {
       setLoading(false);
     }
@@ -89,6 +89,8 @@ export default function Plans() {
       price: '',
       billingPeriod: 'MONTHLY',
       minQuantity: 1,
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: '',
       description: '',
       autoClose: false,
       closable: true,
@@ -112,6 +114,8 @@ export default function Plans() {
       price: plan.price,
       billingPeriod: plan.billingPeriod,
       minQuantity: plan.minQuantity || 1,
+      startDate: plan.startDate || new Date().toISOString().slice(0, 10),
+      endDate: plan.endDate || '',
       description: plan.description || '',
       autoClose: Boolean(plan.autoClose),
       closable: Boolean(plan.closable),
@@ -132,7 +136,7 @@ export default function Plans() {
     }));
   };
 
-  const handleSavePlan = (e) => {
+  const handleSavePlan = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
       toast.error('Plan name is required');
@@ -144,15 +148,23 @@ export default function Plans() {
     }
 
     const prod = products.find((p) => p.id === Number(formData.productId)) || products[0];
+    if (!prod) {
+      toast.error('Create a product first');
+      return;
+    }
+    if (formData.endDate && formData.endDate < formData.startDate) {
+      toast.error('End date must be on or after the start date');
+      return;
+    }
 
     const payload = {
       name: formData.name.trim(),
-      productId: prod?.id || 1,
-      productName: prod?.name || 'Custom Product',
+      productId: prod.id,
       price: Number(formData.price),
       billingPeriod: formData.billingPeriod,
       minQuantity: Number(formData.minQuantity) || 1,
-      description: formData.description.trim(),
+      startDate: formData.startDate,
+      endDate: formData.endDate || null,
       autoClose: formData.autoClose,
       closable: formData.closable,
       pausable: formData.pausable,
@@ -162,10 +174,10 @@ export default function Plans() {
 
     try {
       if (editingPlan) {
-        planService.update(editingPlan.id, payload);
+        await planService.update(editingPlan.id, payload);
         toast.success(`Plan "${payload.name}" updated successfully`);
       } else {
-        planService.create(payload);
+        await planService.create(payload);
         toast.success(`Plan "${payload.name}" created successfully`);
       }
       setShowModal(false);
@@ -176,24 +188,25 @@ export default function Plans() {
     }
   };
 
-  const handleToggleStatus = (id, name) => {
+  const handleToggleStatus = async (id, name) => {
     try {
-      const updated = planService.toggleActive(id);
+      const updated = await planService.toggleActive(id);
       toast.success(`"${name}" is now ${updated.isActive ? 'Active' : 'Inactive'}`);
       loadData();
-    } catch {
-      toast.error('Failed to change plan status');
+    } catch (err) {
+      toast.error(err.message || 'Failed to change plan status');
     }
   };
 
-  const handleDeletePlan = (id) => {
+  const handleDeletePlan = async (id) => {
     try {
-      planService.delete(id);
+      await planService.delete(id);
       toast.success('Subscription plan removed');
       setDeleteConfirmId(null);
       loadData();
-    } catch {
-      toast.error('Failed to delete plan');
+    } catch (err) {
+      setDeleteConfirmId(null);
+      toast.error(err.message || 'Failed to delete plan');
     }
   };
 
@@ -686,15 +699,27 @@ export default function Plans() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Plan Description</label>
-                  <textarea
-                    rows={2}
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Details about SLA, features included, and quotation terms..."
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Available From</label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.startDate}
+                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Available Until (optional)</label>
+                    <input
+                      type="date"
+                      min={formData.startDate}
+                      value={formData.endDate}
+                      onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </div>
                 </div>
 
                 {/* Policies & Lifecycle Toggles */}

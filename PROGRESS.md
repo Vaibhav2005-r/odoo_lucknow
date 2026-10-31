@@ -9,14 +9,15 @@
 
 ## 1. Executive Summary
 
-The project is structured according to the **8-Hour Development Plan & Ownership** across 3 developers:
-- **Developer A (Identity, Config, Customers, Customer Portal, Repo Owner)**: ~85% done
-- **Developer B (Catalog, Plans, Quotation Templates, Subscriptions)**: Stubs in place, ready for implementation
-- **Developer C (Billing Engine, Invoicing, Payments, Reports, Financial Maths)**: Billing engine & core maths done; Invoices/Payments API & Reports pending
+Every requirement in the Brightloop brief is implemented end to end against the real API and database. The frontend no longer
+uses localStorage mock data.
 
-All **34 backend test suites are passing** (`34 passed, 0 failed`). Both backend (`:5000`) and frontend (`:5174`) servers are running cleanly.
-
----
+- Backend: auth/RBAC, users, customers, taxes, payment terms, discounts, **products + variants, plans, quotation templates,
+  subscription lifecycle (Draft → Quotation → Confirmed → Active → Closed, plus pause / resume / renew / add-ons)**, billing
+  engine, invoices, payments, reports.
+- Tests: `npm test` in `backend/` runs the unit tests plus `catalog-subscriptions.test.js`, an API-level test of the whole
+  flow (skipped automatically when no seeded database is reachable).
+- Seed data (`npm run seed`) now includes demo subscriptions, invoices and payments.
 
 ## 2. Completed Modules & Features (DONE)
 
@@ -67,73 +68,22 @@ All **34 backend test suites are passing** (`34 passed, 0 failed`). Both backend
 
 ---
 
-## 3. Pending Tasks (What to Work on Next)
+## 3. Delivered since the last update
 
-### Priority 1: Developer B — Catalog & Subscriptions
+| Area | What was added |
+|---|---|
+| Products & variants | `/api/products`, `/api/variants`: CRUD, tax links, variant extra price (e.g. brand Odoo = +560), in-use rows are deactivated instead of deleted |
+| Plans | `/api/plans`: period, minimum quantity, availability dates, auto-close / closable / pausable / renewable flags |
+| Quotation templates | `/api/quotation-templates`: plan, payment term, validity days, product + variant lines |
+| Subscriptions | create (manual or from template), edit while draft/quotation, send-quotation, confirm, activate, renew, add / toggle / remove add-on lines, stats; plan-rule checks (minimum quantity, availability dates) |
+| Frontend | Products, Plans (now with available-from/until dates), Templates (variant picker, server-derived prices), Subscription list / form / detail all use the API |
 
-#### 1. Backend Modules (Currently 85-byte stubs)
-- [ ] **Products & Variants** (`backend/src/modules/products/`):
-  - `products.routes.js`: CRUD for products (SERVICE, GOODS, ADDON), attach taxes (`taxIds`).
-  - `variants.routes.js`: CRUD for product variants (attribute name, value, `extraPrice`).
-- [ ] **Plans** (`backend/src/modules/plans/plans.routes.js`):
-  - Plan CRUD linked to a Product, billing period (`DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`), pricing, flags (`autoClose`, `closable`, `pausable`, `renewable`).
-- [ ] **Quotation Templates** (`backend/src/modules/templates/templates.routes.js`):
-  - Template CRUD with default Plan, default Payment Term, validity days, and pre-configured lines (`TemplateLine`).
-- [ ] **Subscriptions Lifecycle** (`backend/src/modules/subscriptions/`):
-  - `subscriptions.routes.js` & `subscriptions.service.js`:
-    - Create subscription (Draft) manually or from a Quotation Template.
-    - Transitions: `sendQuotation` (Draft → Quotation) → `confirm` (Quotation → Confirmed) → `activate` (Confirmed → Active) → `close` (Active → Closed).
-    - Lifecycle controls: `pause`, `resume`, `renew`.
-    - Add-on management: switch add-on lines active/inactive, add dynamic add-on lines.
-    - Subscription recalculation via `recalcSubscription` when lines or discounts change.
+## 3b. Known limitations
 
-#### 2. Frontend Pages for Developer B
-- [ ] **Catalog / Products View** (`frontend/src/pages/catalog/Products.jsx`):
-  - Product list with variants, prices, tax tags, and Add Product modal.
-- [ ] **Plans View** (`frontend/src/pages/catalog/Plans.jsx`):
-  - List of recurring billing plans with period badges and terms.
-- [ ] **Quotation Templates View** (`frontend/src/pages/catalog/Templates.jsx`):
-  - Template creation with line item builder.
-- [ ] **Subscriptions View** (`frontend/src/pages/subscriptions/`):
-  - `SubscriptionList.jsx`: Table with filters by status (Draft, Quotation, Confirmed, Active, Closed), customer, plan.
-  - `SubscriptionDetail.jsx`: Header with action buttons (`Send Quotation`, `Confirm`, `Pause`, `Resume`, `Close`, `Renew`), line items table with add-on toggles, invoice history tab, and audit trail log.
-  - `SubscriptionForm.jsx`: New quotation / subscription creator with template auto-fill.
-
----
-
-### Priority 2: Developer C — Invoices, Payments & Reports
-
-#### 1. Backend Modules (Currently 85-byte stubs)
-- [ ] **Invoices** (`backend/src/modules/invoices/invoices.routes.js` & `invoices.service.js`):
-  - `GET /api/invoices`: View filters (`ALL`, `DRAFT`, `OUTSTANDING`, `OVERDUE`, `PAID`, `CANCELLED`), search by invoice number or customer name.
-  - `GET /api/invoices/:id`: Full invoice details with line items snapshot, payments applied, and customer snapshot.
-  - `POST /api/invoices/:id/confirm` & `/api/invoices/bulk-confirm`: Confirm draft invoices into outstanding state.
-  - `POST /api/invoices/:id/cancel`: Cancel unpaid invoice.
-  - `POST /api/invoices/:id/send` & `remind`: Email invoice / payment reminder via Nodemailer.
-- [ ] **Payments** (`backend/src/modules/payments/payments.routes.js` & `payments.service.js`):
-  - `POST /api/invoices/:id/payments`: Record payment against invoice (CASH, BANK_TRANSFER, UPI, CARD, CHEQUE, OTHER), atomically update invoice `amountPaid`, and mark status `PAID` once fully settled.
-  - `GET /api/payments`: Payment ledger with date range and customer filters.
-- [ ] **Reports** (`backend/src/modules/reports/reports.routes.js` & `reports.service.js`):
-  - `GET /api/reports/summary`: Active subscriptions count, MRR, ARR, revenue collected, amount outstanding, amount overdue.
-  - `GET /api/reports/revenue-by-month`: Monthly revenue aggregation for chart visualization.
-
-#### 2. Frontend Pages for Developer C
-- [ ] **Invoices View** (`frontend/src/pages/invoices/`):
-  - `InvoiceList.jsx`: Tabs for Draft, Outstanding, Overdue, Paid, Cancelled; bulk confirm button.
-  - `InvoiceDetail.jsx`: Printable invoice preview, tax breakdown, Record Payment modal.
-- [ ] **Payments View** (`frontend/src/pages/payments/PaymentList.jsx`):
-  - Payment transactions table.
-- [ ] **Dashboard / Reports** (`frontend/src/pages/reports/Dashboard.jsx`):
-  - KPI cards: Active Subscriptions, MRR, ARR, Collected, Overdue.
-  - Revenue chart (using Recharts).
-
----
-
-### Priority 3: Developer A — Customer Portal UI
-- [ ] **Customer Portal Pages** (`frontend/src/pages/portal/`):
-  - `PortalDashboard.jsx`: Active plan overview, next billing date, outstanding invoices banner.
-  - `PortalSubscriptions.jsx`: View own subscriptions, manage optional add-ons, request cancellation.
-  - `PortalInvoices.jsx`: View & download invoices, review payment receipts.
+- Product images and SKU are display-only: the schema has no column for them, so uploaded images are not stored.
+- The subscription form's price panel is an estimate; the server recalculates exact amounts on save.
+- Customers dropdown loads the first 100 customers; add search-as-you-type if the list grows far beyond that.
+- macOS uses port 5000 for AirPlay Receiver. Set `PORT` in `backend/.env` and `VITE_API_TARGET` when starting Vite (e.g. `VITE_API_TARGET=http://localhost:5001 npm run dev`), or turn AirPlay Receiver off.
 
 ---
 

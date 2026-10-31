@@ -24,55 +24,71 @@ import { subscriptionService } from '../../services/subscriptionService';
 import { planService } from '../../services/planService';
 import { productService } from '../../services/productService';
 import { templateService } from '../../services/templateService';
-import {
-  DEFAULT_CUSTOMERS,
-  DEFAULT_PAYMENT_TERMS,
-  DEFAULT_DISCOUNTS,
-  DEFAULT_TAXES,
-} from '../../services/dataDefaults';
+import { referenceService } from '../../services/referenceService';
 import { inr } from '../../lib/format';
 
 export default function SubscriptionForm() {
   const navigate = useNavigate();
 
-  // Reference Datasets
-  const [customers, setCustomers] = useState(DEFAULT_CUSTOMERS);
+  // Reference Datasets (all from the API)
+  const [customers, setCustomers] = useState([]);
   const [plans, setPlans] = useState([]);
   const [products, setProducts] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [terms, setTerms] = useState([]);
+  const [discounts, setDiscounts] = useState([]);
+  const [saving, setSaving] = useState(false);
 
   // Form State
-  const [selectedCustomerId, setSelectedCustomerId] = useState(1);
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [baseQuantity, setBaseQuantity] = useState(1);
+  const [baseVariantId, setBaseVariantId] = useState('');
 
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [expiryDate, setExpiryDate] = useState(
-    new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  );
-  const [paymentTermId, setPaymentTermId] = useState(2); // 15 Days
+  const [expiryDate, setExpiryDate] = useState(() => {
+    const d = new Date();
+    d.setUTCFullYear(d.getUTCFullYear() + 1);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [paymentTermId, setPaymentTermId] = useState('');
   const [discountId, setDiscountId] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Add-ons array: [{ id, productId, name, unitPrice, quantity, taxRate, isActive }]
+  // Add-ons array: [{ id, productId, variantId, name, unitPrice, quantity, taxRate, isActive }]
   const [addons, setAddons] = useState([]);
 
   // Addon selection sub-state
   const [newAddonProductId, setNewAddonProductId] = useState('');
 
   useEffect(() => {
-    const allPlans = planService.getAll({ status: 'ACTIVE' });
-    setPlans(allPlans);
-    if (allPlans.length > 0) setSelectedPlanId(allPlans[0].id);
-
-    const allProducts = productService.getAll({ status: 'ACTIVE' });
-    setProducts(allProducts);
-
-    const addonProducts = allProducts.filter((p) => p.type === 'ADDON');
-    if (addonProducts.length > 0) setNewAddonProductId(addonProducts[0].id);
-
-    const allTemplates = templateService.getAll({ status: 'ACTIVE' });
-    setTemplates(allTemplates);
+    Promise.all([
+      planService.getAll({ status: 'ACTIVE' }),
+      productService.getAll({ status: 'ACTIVE' }),
+      templateService.getAll({ status: 'ACTIVE' }),
+      referenceService.paymentTerms(),
+      referenceService.subscriptionDiscounts(),
+      referenceService.customers(),
+    ])
+      .then(([allPlans, allProducts, allTemplates, allTerms, allDiscounts, allCustomers]) => {
+        setPlans(allPlans);
+        if (allPlans.length > 0) {
+          setSelectedPlanId(allPlans[0].id);
+          setBaseQuantity(allPlans[0].minQuantity || 1);
+        }
+        setProducts(allProducts);
+        const addonProducts = allProducts.filter((p) => p.type === 'ADDON');
+        if (addonProducts.length > 0) setNewAddonProductId(addonProducts[0].id);
+        setTemplates(allTemplates);
+        setTerms(allTerms);
+        setPaymentTermId((allTerms.find((t) => t.dueDays === 15) || allTerms[0])?.id || '');
+        setDiscounts(allDiscounts);
+        setCustomers(allCustomers);
+        if (allCustomers.length > 0) setSelectedCustomerId(allCustomers[0].id);
+      })
+      .catch((err) => toast.error(err.message || 'Failed to load form data'));
   }, []);
 
   const selectedCustomer = useMemo(() => {
@@ -83,35 +99,58 @@ export default function SubscriptionForm() {
     return plans.find((p) => p.id === Number(selectedPlanId)) || plans[0];
   }, [plans, selectedPlanId]);
 
+  const basePlanProduct = useMemo(
+    () => products.find((p) => p.id === selectedPlan?.productId) || null,
+    [products, selectedPlan],
+  );
+  const baseVariants = (basePlanProduct?.variants || []).filter((v) => v.isActive);
+  const baseVariant = baseVariants.find((v) => v.id === Number(baseVariantId)) || null;
+
   const selectedDiscount = useMemo(() => {
-    return DEFAULT_DISCOUNTS.find((d) => d.id === Number(discountId)) || null;
-  }, [discountId]);
+    return discounts.find((d) => d.id === Number(discountId)) || null;
+  }, [discounts, discountId]);
+
+  const handlePlanChange = (e) => {
+    const plan = plans.find((p) => p.id === Number(e.target.value));
+    setSelectedPlanId(e.target.value);
+    setBaseVariantId('');
+    if (plan) setBaseQuantity((q) => Math.max(Number(q) || 1, plan.minQuantity || 1));
+  };
 
   // Autofill when Template is selected
-  const handleTemplateSelect = (e) => {
+  const handleTemplateSelect = async (e) => {
     const tplId = e.target.value;
     setSelectedTemplateId(tplId);
     if (!tplId) return;
 
-    const tpl = templateService.getById(tplId);
+    const tpl = templates.find((t) => t.id === Number(tplId));
     if (!tpl) return;
 
+    const plan = plans.find((p) => p.id === tpl.planId);
     if (tpl.planId) setSelectedPlanId(tpl.planId);
     if (tpl.paymentTermId) setPaymentTermId(tpl.paymentTermId);
 
-    // Populate add-on lines from template
+    const baseLine = (tpl.lines || []).find((l) => l.productId === plan?.productId);
+    setBaseQuantity(baseLine?.quantity || plan?.minQuantity || 1);
+    setBaseVariantId(baseLine?.variantId || '');
+
+    // Every other template line becomes an add-on row
     const addonLines = (tpl.lines || [])
-      .filter((l) => l.productId !== tpl.planId)
-      .map((l, idx) => ({
-        id: Date.now() + idx,
-        productId: l.productId,
-        name: l.productName,
-        unitPrice: l.unitPrice,
-        quantity: l.quantity,
-        taxRate: l.taxRate || 18,
-        taxName: 'GST 18%',
-        isActive: true,
-      }));
+      .filter((l) => l !== baseLine)
+      .map((l, idx) => {
+        const prod = products.find((p) => p.id === l.productId);
+        return {
+          id: Date.now() + idx,
+          productId: l.productId,
+          variantId: l.variantId || null,
+          name: l.productName,
+          unitPrice: l.unitPrice,
+          quantity: l.quantity,
+          taxRate: l.taxRate,
+          taxName: prod?.taxes?.map((t) => t.name).join(', ') || '',
+          isActive: true,
+        };
+      });
 
     setAddons(addonLines);
     toast.success(`Template "${tpl.name}" loaded into subscription`);
@@ -129,8 +168,9 @@ export default function SubscriptionForm() {
       name: prod.name,
       unitPrice: prod.salesPrice,
       quantity: 1,
-      taxRate: prod.taxes?.[0]?.rate || 18,
-      taxName: prod.taxes?.[0]?.name || 'GST 18%',
+      variantId: null,
+      taxRate: prod.taxes.reduce((a, t) => a + t.rate, 0),
+      taxName: prod.taxes.map((t) => t.name).join(', '),
       isActive: true,
     };
 
@@ -160,29 +200,34 @@ export default function SubscriptionForm() {
     );
   };
 
-  // Price Calculation Engine
+  // Live estimate shown while editing. The server recalculates everything when the subscription is saved.
   const priceCalculations = useMemo(() => {
-    const basePlanPrice = selectedPlan ? Number(selectedPlan.price) : 0;
+    const baseRate = selectedPlan ? Number(selectedPlan.price) + Number(baseVariant?.extraPrice || 0) : 0;
+    const basePlanPrice = baseRate * (Number(baseQuantity) || 1);
+    const baseTaxRate = (basePlanProduct?.taxes || []).reduce((a, t) => a + t.rate, 0);
 
     const activeAddons = addons.filter((a) => a.isActive);
-    const addonsAmount = activeAddons.reduce(
-      (sum, a) => sum + Number(a.unitPrice) * Number(a.quantity),
-      0
-    );
+    const addonsAmount = activeAddons.reduce((sum, a) => sum + Number(a.unitPrice) * Number(a.quantity), 0);
 
     const subtotal = basePlanPrice + addonsAmount;
 
     let discountAmount = 0;
-    if (selectedDiscount) {
-      if (selectedDiscount.type === 'PERCENTAGE') {
-        discountAmount = subtotal * (Number(selectedDiscount.value) / 100);
-      } else {
-        discountAmount = Math.min(subtotal, Number(selectedDiscount.value));
+    if (selectedDiscount && subtotal > 0) {
+      const minOk = selectedDiscount.minPurchase == null || subtotal >= Number(selectedDiscount.minPurchase);
+      if (minOk) {
+        discountAmount =
+          selectedDiscount.type === 'PERCENTAGE'
+            ? subtotal * (Number(selectedDiscount.value) / 100)
+            : Math.min(subtotal, Number(selectedDiscount.value));
       }
     }
 
+    const keep = subtotal > 0 ? 1 - discountAmount / subtotal : 1;
+    const taxAmount =
+      (basePlanPrice * baseTaxRate + activeAddons.reduce((sum, a) => sum + Number(a.unitPrice) * Number(a.quantity) * Number(a.taxRate || 0), 0)) *
+      keep /
+      100;
     const taxableAmount = Math.max(0, subtotal - discountAmount);
-    const taxAmount = taxableAmount * 0.18; // GST 18%
     const totalRecurringAmount = Math.round((taxableAmount + taxAmount) * 100) / 100;
 
     return {
@@ -194,62 +239,51 @@ export default function SubscriptionForm() {
       taxAmount: Math.round(taxAmount * 100) / 100,
       totalRecurringAmount,
     };
-  }, [selectedPlan, addons, selectedDiscount]);
+  }, [selectedPlan, basePlanProduct, baseVariant, baseQuantity, addons, selectedDiscount]);
 
   // Submission handler
-  const handleSubmit = (initialStatus = 'DRAFT') => {
-    if (!selectedCustomerId) {
+  const handleSubmit = async (initialStatus = 'DRAFT') => {
+    if (!selectedCustomer) {
       toast.error('Customer selection is required');
       return;
     }
-    if (!selectedPlanId || !selectedPlan) {
+    if (!selectedPlan) {
       toast.error('Subscription plan is required');
       return;
     }
-
-    const selectedTerm = DEFAULT_PAYMENT_TERMS.find((t) => t.id === Number(paymentTermId));
-
-    // Construct main lines
-    const mainPlanLine = {
-      productId: selectedPlan.productId,
-      name: `${selectedPlan.name} (${selectedPlan.billingPeriod})`,
-      type: 'SERVICE',
-      quantity: 1,
-      unitPrice: selectedPlan.price,
-      taxRate: 18,
-      taxName: 'GST 18%',
-      isActive: true,
-      isBasePlan: true,
-    };
+    if (Number(baseQuantity) < (selectedPlan.minQuantity || 1)) {
+      toast.error(`This plan needs a minimum quantity of ${selectedPlan.minQuantity}`);
+      return;
+    }
+    if (expiryDate < startDate) {
+      toast.error('Expiry date must be on or after the start date');
+      return;
+    }
 
     const payload = {
       customerId: selectedCustomer.id,
-      customerName: selectedCustomer.name,
-      customerCompany: selectedCustomer.company,
-      customerEmail: selectedCustomer.email,
-      customerPhone: selectedCustomer.phone,
-      customerGstin: selectedCustomer.gstin,
-      customerAddress: selectedCustomer.address,
       planId: selectedPlan.id,
-      planName: selectedPlan.name,
-      productName: selectedPlan.productName,
-      billingPeriod: selectedPlan.billingPeriod,
+      templateId: selectedTemplateId || null,
       initialStatus,
       startDate,
       expiryDate,
-      nextBillingDate: startDate,
-      paymentTermId: selectedTerm?.id || 1,
-      paymentTermName: selectedTerm?.name || 'Immediate',
+      paymentTermId,
       discountId: selectedDiscount?.id || null,
-      discountName: selectedDiscount?.name || null,
-      discountRate: selectedDiscount?.type === 'PERCENTAGE' ? selectedDiscount.value : 0,
-      discountFixed: selectedDiscount?.type === 'FIXED' ? selectedDiscount.value : 0,
       notes: notes.trim(),
-      lines: [mainPlanLine, ...addons],
+      lines: [
+        {
+          productId: selectedPlan.productId,
+          variantId: baseVariant?.id || null,
+          quantity: Number(baseQuantity) || 1,
+          isBasePlan: true,
+        },
+        ...addons.filter((a) => a.isActive),
+      ],
     };
 
     try {
-      const created = subscriptionService.create(payload);
+      setSaving(true);
+      const created = await subscriptionService.create(payload);
       toast.success(
         initialStatus === 'QUOTATION'
           ? `Quotation ${created.number} created and dispatched!`
@@ -258,6 +292,8 @@ export default function SubscriptionForm() {
       navigate(`/app/subscriptions/${created.id}`);
     } catch (err) {
       toast.error(err.message || 'Failed to create subscription');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -375,7 +411,7 @@ export default function SubscriptionForm() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">Select Recurring Plan *</label>
               <select
                 value={selectedPlanId}
-                onChange={(e) => setSelectedPlanId(Number(e.target.value))}
+                onChange={handlePlanChange}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white font-medium focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 {plans.map((p) => (
@@ -398,9 +434,39 @@ export default function SubscriptionForm() {
                     {selectedPlan.billingPeriod}
                   </span>
                 </div>
+                <div className="flex justify-between items-center gap-3 pt-1 border-t border-slate-200">
+                  <span className="text-slate-500">Quantity (min {selectedPlan.minQuantity || 1}):</span>
+                  <input
+                    type="number"
+                    min={selectedPlan.minQuantity || 1}
+                    value={baseQuantity}
+                    onChange={(e) => setBaseQuantity(e.target.value)}
+                    className="w-20 px-2 py-1 text-center border border-slate-300 rounded text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                </div>
+                {baseVariants.length > 0 && (
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-slate-500">Variant:</span>
+                    <select
+                      value={baseVariantId}
+                      onChange={(e) => setBaseVariantId(e.target.value)}
+                      className="px-2 py-1 border border-slate-300 rounded bg-white text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    >
+                      <option value="">Standard</option>
+                      {baseVariants.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.attribute}: {v.value}
+                          {v.extraPrice ? ` (+${inr(v.extraPrice)})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pt-1 border-t border-slate-200">
-                  <span className="text-slate-500">Base Recurring Rate:</span>
-                  <span className="text-base font-extrabold text-slate-900">{inr(selectedPlan.price)}</span>
+                  <span className="text-slate-500">Base Recurring Rate (per unit):</span>
+                  <span className="text-base font-extrabold text-slate-900">
+                    {inr(selectedPlan.price + Number(baseVariant?.extraPrice || 0))}
+                  </span>
                 </div>
               </div>
             )}
@@ -449,7 +515,7 @@ export default function SubscriptionForm() {
                 onChange={(e) => setPaymentTermId(Number(e.target.value))}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-medium"
               >
-                {DEFAULT_PAYMENT_TERMS.map((t) => (
+                {terms.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name} ({t.dueDays}d due)
                   </option>
@@ -465,7 +531,7 @@ export default function SubscriptionForm() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-medium"
               >
                 <option value="">None (Standard Rate)</option>
-                {DEFAULT_DISCOUNTS.map((d) => (
+                {discounts.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
@@ -620,10 +686,10 @@ export default function SubscriptionForm() {
                 Recurring bills will generate on the cycle anniversary date ({selectedPlan?.billingPeriod.toLowerCase()}).
               </p>
               <p>
-                Invoices inherit payment terms ({DEFAULT_PAYMENT_TERMS.find((t) => t.id === Number(paymentTermId))?.name}).
+                Invoices inherit payment terms ({terms.find((t) => t.id === Number(paymentTermId))?.name}).
               </p>
               <p className="text-[11px] text-slate-400">
-                Taxes are calculated based on registered state GST rules (18%). All financial computations run with full paise precision.
+                This is an estimate. Taxes and discounts are recalculated on the server using the product tax rules and discount conditions when you save.
               </p>
             </div>
 
@@ -675,6 +741,7 @@ export default function SubscriptionForm() {
           </Link>
           <button
             type="button"
+            disabled={saving}
             onClick={() => handleSubmit('DRAFT')}
             className="w-full sm:w-auto px-5 py-2 border border-brand-300 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-lg text-sm font-semibold transition"
           >
@@ -682,6 +749,7 @@ export default function SubscriptionForm() {
           </button>
           <button
             type="button"
+            disabled={saving}
             onClick={() => handleSubmit('QUOTATION')}
             className="w-full sm:w-auto px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-semibold shadow-xs transition"
           >

@@ -285,6 +285,52 @@ async function main() {
     ),
   );
 
+  // ---- Demo subscriptions, invoices and payments (only on a fresh database) ----
+  if ((await prisma.subscription.count()) === 0) {
+    const staffUser = { id: staff.id };
+    const newSub = (input) => createSubscription({ paymentTermId: immediate.id, ...input }, staffUser);
+
+    // Active monthly CRM for Riya, 3 months in, Odoo brand on 3 seats, with the Storage add-on.
+    const riyaSub = await newSub({
+      customerId: riya.id,
+      planId: crmMonthly.id,
+      startDate: fmtDate(monthsAgo(3)),
+      lines: [
+        { productId: crm.id, variantId: odooVariant.id, quantity: 3 },
+        { productId: storage.id, quantity: 1 },
+      ],
+    });
+    await confirm(riyaSub.id, staff.id, 'Seed data');
+
+    // Yearly enterprise deal from a template with the loyalty discount.
+    const mehtaSub = await newSub({
+      customerId: big.id,
+      templateId: enterprise.id,
+      startDate: fmtDate(addDays(today, -30)),
+      discountId: loyalty.id,
+    });
+    await confirm(mehtaSub.id, staff.id, 'Seed data');
+
+    // A quotation waiting for the customer, and a draft still being prepared.
+    await newSub({ customerId: others[0].id, templateId: smallShop.id, startDate: fmtDate(addDays(today, 5)), sendQuotation: true });
+    await newSub({ customerId: others[1].id, planId: crmMonthly.id, startDate: fmtDate(addDays(today, 10)), lines: [{ productId: crm.id, quantity: 4 }] });
+
+    await runBilling(today);
+
+    // Confirm every invoice, pay the older ones so paid / outstanding / overdue are all visible.
+    const invoices = await prisma.invoice.findMany({ orderBy: { periodStart: 'asc' } });
+    await confirmInvoices(invoices.map((i) => i.id));
+    for (const [n, inv] of invoices.entries()) {
+      if (n % 3 === 2) continue; // leave some unpaid
+      if (inv.periodStart > addDays(today, -35)) continue; // keep the latest period open
+      await recordPayment(
+        inv.id,
+        { amount: Number(inv.amountTotal), method: n % 2 ? 'UPI' : 'BANK_TRANSFER', paymentDate: fmtDate(inv.periodStart), note: 'Seed payment' },
+        admin.id,
+      );
+    }
+  }
+
   console.log('Seed completed successfully!');
 }
 

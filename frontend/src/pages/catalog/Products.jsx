@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { productService } from '../../services/productService';
-import { DEFAULT_TAXES } from '../../services/dataDefaults';
+import { referenceService } from '../../services/referenceService';
 import { inr } from '../../lib/format';
 
 export default function Products() {
@@ -59,18 +59,19 @@ export default function Products() {
   });
   const [editingVariantIndex, setEditingVariantIndex] = useState(null);
 
-  const loadData = () => {
+  const [taxes, setTaxes] = useState([]);
+
+  const loadData = async () => {
     try {
       setLoading(true);
-      const data = productService.getAll({
-        search,
-        type: typeFilter,
-        status: statusFilter,
-      });
+      const [data, st] = await Promise.all([
+        productService.getAll({ search, type: typeFilter, status: statusFilter }),
+        productService.getStats(),
+      ]);
       setProducts(data);
-      setStats(productService.getStats());
-    } catch {
-      toast.error('Failed to load products');
+      setStats(st);
+    } catch (err) {
+      toast.error(err.message || 'Failed to load products');
     } finally {
       setLoading(false);
     }
@@ -80,6 +81,16 @@ export default function Products() {
     loadData();
   }, [search, typeFilter, statusFilter]);
 
+  useEffect(() => {
+    referenceService
+      .taxes()
+      .then((list) => {
+        setTaxes(list);
+        setFormData((f) => (f.taxId && list.some((t) => t.id === f.taxId) ? f : { ...f, taxId: list[0]?.id ?? '' }));
+      })
+      .catch((err) => toast.error(err.message || 'Failed to load taxes'));
+  }, []);
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -88,7 +99,7 @@ export default function Products() {
       salesPrice: '',
       costPrice: '',
       description: '',
-      taxId: 1,
+      taxId: taxes[0]?.id ?? '',
       imageUrl: '',
       isActive: true,
       variants: [],
@@ -112,7 +123,7 @@ export default function Products() {
       salesPrice: product.salesPrice,
       costPrice: product.costPrice || '',
       description: product.description || '',
-      taxId: product.taxIds?.[0] || 1,
+      taxId: product.taxIds?.[0] ?? taxes[0]?.id ?? '',
       imageUrl: product.imageUrl || '',
       isActive: product.isActive,
       variants: product.variants ? JSON.parse(JSON.stringify(product.variants)) : [],
@@ -188,7 +199,7 @@ export default function Products() {
     }
   };
 
-  const handleSaveProduct = (e) => {
+  const handleSaveProduct = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
       toast.error('Product name is required');
@@ -199,56 +210,52 @@ export default function Products() {
       return;
     }
 
-    const selectedTax = DEFAULT_TAXES.find((t) => t.id === Number(formData.taxId)) || DEFAULT_TAXES[0];
-
     const payload = {
       name: formData.name.trim(),
-      sku: formData.sku.trim() || `PRD-${Math.floor(100 + Math.random() * 900)}`,
       type: formData.type,
       salesPrice: Number(formData.salesPrice),
       costPrice: Number(formData.costPrice) || 0,
       description: formData.description.trim(),
-      taxIds: [selectedTax.id],
-      taxes: [selectedTax],
-      imageUrl: formData.imageUrl,
+      taxIds: formData.taxId ? [Number(formData.taxId)] : [],
       isActive: formData.isActive,
       variants: formData.variants,
     };
 
     try {
       if (editingProduct) {
-        productService.update(editingProduct.id, payload);
+        await productService.update(editingProduct.id, payload);
         toast.success(`Product "${payload.name}" updated successfully`);
       } else {
-        productService.create(payload);
+        await productService.create(payload);
         toast.success(`Product "${payload.name}" created successfully`);
       }
       setShowModal(false);
       resetForm();
-      loadData();
+      await loadData();
     } catch (err) {
       toast.error(err.message || 'Error saving product');
     }
   };
 
-  const handleToggleStatus = (id, name) => {
+  const handleToggleStatus = async (id, name) => {
     try {
-      const updated = productService.toggleActive(id);
+      const updated = await productService.toggleActive(id);
       toast.success(`"${name}" is now ${updated.isActive ? 'Active' : 'Inactive'}`);
       loadData();
-    } catch {
-      toast.error('Failed to change product status');
+    } catch (err) {
+      toast.error(err.message || 'Failed to change product status');
     }
   };
 
-  const handleDeleteProduct = (id) => {
+  const handleDeleteProduct = async (id) => {
     try {
-      productService.delete(id);
+      await productService.delete(id);
       toast.success('Product removed successfully');
       setDeleteConfirmId(null);
       loadData();
-    } catch {
-      toast.error('Failed to delete product');
+    } catch (err) {
+      setDeleteConfirmId(null);
+      toast.error(err.message || 'Failed to delete product');
     }
   };
 
@@ -627,7 +634,7 @@ export default function Products() {
                     onChange={(e) => setFormData({ ...formData, taxId: Number(e.target.value) })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                   >
-                    {DEFAULT_TAXES.map((t) => (
+                    {taxes.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.name} ({t.rate}%)
                       </option>

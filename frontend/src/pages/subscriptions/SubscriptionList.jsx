@@ -35,24 +35,20 @@ export default function SubscriptionList() {
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({ total: 0, totalPages: 1, pageSize: 10 });
 
-  const loadData = () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const res = subscriptionService.getAll({
-        search,
-        status: statusFilter,
-        planId: planFilter,
-        page,
-        pageSize: 10,
-      });
+      const [res, st, allPlans] = await Promise.all([
+        subscriptionService.getAll({ search, status: statusFilter, planId: planFilter, page, pageSize: 10 }),
+        subscriptionService.getStats(),
+        planService.getAll(),
+      ]);
       setSubscriptions(res.data);
       setMeta(res.meta);
-      setStats(subscriptionService.getStats());
-
-      const allPlans = planService.getAll();
+      setStats(st);
       setPlans(allPlans);
-    } catch {
-      toast.error('Failed to load subscriptions');
+    } catch (err) {
+      toast.error(err.message || 'Failed to load subscriptions');
     } finally {
       setLoading(false);
     }
