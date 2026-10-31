@@ -25,21 +25,35 @@ export default function App() {
             <Route path="/app" element={<RequireRole roles={IN}><AppLayout /></RequireRole>}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<P.Dashboard />} />
+
+              {/* Subscriptions Module */}
               <Route path="subscriptions" element={<P.SubscriptionList />} />
               <Route path="subscriptions/new" element={<P.SubscriptionForm />} />
               <Route path="subscriptions/:id" element={<P.SubscriptionDetail />} />
-              <Route path="quotation-templates" element={<P.TemplateList />} />
-              <Route path="quotation-templates/:id" element={<P.TemplateForm />} />
+
+              {/* Quotation Templates */}
+              <Route path="templates" element={<P.Templates />} />
+              <Route path="templates/:id" element={<P.Templates />} />
+              <Route path="quotation-templates" element={<Navigate to="/app/templates" replace />} />
+              <Route path="quotation-templates/:id" element={<Navigate to="/app/templates" replace />} />
+
+              {/* Catalog Module */}
+              <Route path="products" element={<P.Products />} />
+              <Route path="products/:id" element={<P.Products />} />
+              <Route path="plans" element={<P.Plans />} />
+              <Route path="plans/:id" element={<P.Plans />} />
+
+              {/* Customers */}
               <Route path="customers" element={<P.CustomerList />} />
               <Route path="customers/:id" element={<P.CustomerDetail />} />
+
+              {/* Billing & Invoices */}
               <Route path="invoices" element={<P.InvoiceList />} />
               <Route path="invoices/:id" element={<P.InvoiceDetail />} />
               <Route path="payments" element={<P.PaymentList />} />
               <Route path="billing" element={<RequireRole roles={['ADMIN']}><P.BillingRun /></RequireRole>} />
-              <Route path="products" element={<P.ProductList />} />
-              <Route path="products/:id" element={<P.ProductForm />} />
-              <Route path="plans" element={<P.PlanList />} />
-              <Route path="plans/:id" element={<P.PlanForm />} />
+
+              {/* Configuration */}
               <Route path="discounts" element={<P.DiscountList />} />
               <Route path="discounts/:id" element={<P.DiscountForm />} />
               <Route path="taxes" element={<RequireRole roles={['ADMIN']}><P.Taxes /></RequireRole>} />

@@ -10,7 +10,7 @@ export const NAV = [
     group: 'Sales',
     items: [
       { to: '/app/subscriptions', label: 'Subscriptions', icon: 'Repeat', roles: IN },
-      { to: '/app/quotation-templates', label: 'Quotation Templates', icon: 'FileStack', roles: IN },
+      { to: '/app/templates', label: 'Quotation Templates', icon: 'FileStack', roles: IN },
       { to: '/app/customers', label: 'Customers', icon: 'Users', roles: IN },
     ],
   },
