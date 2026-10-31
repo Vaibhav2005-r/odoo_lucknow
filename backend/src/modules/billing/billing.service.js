@@ -1,0 +1,133 @@
+import { prisma } from '../../lib/prisma.js';
+import { env } from '../../config/env.js';
+import { computeTotals, duePeriods, addPeriods, addDays, toRupees, todayIn } from '../../lib/billing-core.js';
+import { nextNumber } from '../../lib/sequence.js';
+import { SUB_INCLUDE, lineInput, loadDiscountCandidates } from './pricing.js';
+
+const state = { running: false, startedAt: null, finishedAt: null, processed: 0, invoicesCreated: 0, failed: [] };
+export const billingStatus = () => ({ ...state, failed: [...state.failed] });
+
+// Creates the invoice for the next due period of one subscription. Returns true if one was created.
+async function billNextPeriod(tx, subscriptionId, asOf) {
+  const sub = await tx.subscription.findUnique({ where: { id: subscriptionId }, include: SUB_INCLUDE });
+  if (!sub || sub.status !== 'ACTIVE' || sub.isPaused) return false;
+
+  const [period] = duePeriods({
+    startDate: sub.startDate,
+    billingPeriod: sub.plan.billingPeriod,
+    nextPeriodIndex: sub.nextPeriodIndex,
+    expiryDate: sub.expiryDate,
+  }, asOf, 1);
+  if (!period) return false;
+
+  const lines = sub.lines.filter((l) => l.isActive);
+  const totals = computeTotals(lines.map(lineInput), await loadDiscountCandidates(tx, sub), asOf);
+  const number = await nextNumber(tx, 'INV', asOf.getUTCFullYear());
+
+  await tx.invoice.create({
+    data: {
+      number,
+      subscriptionId: sub.id,
+      customerId: sub.customerId,
+      status: 'DRAFT',
+      invoiceDate: asOf,
+      dueDate: addDays(asOf, sub.paymentTerm.dueDays),
+      periodStart: period.start,
+      periodEnd: period.end,
+      amountSubtotal: toRupees(totals.subtotal),
+      amountDiscount: toRupees(totals.discount),
+      amountUntaxed: toRupees(totals.untaxed),
+      amountTax: toRupees(totals.tax),
+      amountTotal: toRupees(totals.total),
+      appliedDiscountIds: totals.appliedDiscountIds,
+      customerSnapshot: {
+        name: sub.customer.name,
+        email: sub.customer.email,
+        company: sub.customer.company,
+        address: sub.customer.address,
+        gstin: sub.customer.gstin,
+      },
+      lines: {
+        create: totals.lines.map((l) => ({
+          productId: l.productId,
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          subtotal: toRupees(l.subtotal),
+          discountAmount: toRupees(l.discount),
+          taxRate: l.taxRate,
+          taxLabel: l.taxLabel || null,
+          taxAmount: toRupees(l.tax),
+          total: toRupees(l.total),
+        })),
+      },
+    },
+  });
+
+  // One use per invoice; refuse to go over the limit even if two invoices race.
+  for (const id of totals.appliedDiscountIds) {
+    const n = await tx.$executeRaw`UPDATE "Discount" SET "usedCount" = "usedCount" + 1
+      WHERE id = ${id} AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")`;
+    if (n === 0) throw new Error(`Discount ${id} ran out during billing; the next run will bill without it`);
+  }
+
+  const nextIndex = period.index + 1;
+  const nextStart = addPeriods(sub.startDate, sub.plan.billingPeriod, nextIndex);
+  await tx.subscription.update({
+    where: { id: sub.id, nextPeriodIndex: period.index }, // optimistic guard against a parallel run
+    data: { nextPeriodIndex: nextIndex, nextInvoiceDate: nextStart > sub.expiryDate ? null : nextStart },
+  });
+  return true;
+}
+
+// Bills every due period of one subscription (catch-up), one transaction per period.
+export async function billSubscription(id, asOf = todayIn(env.APP_TZ)) {
+  let created = 0;
+  for (let i = 0; i < 400; i++) {
+    const made = await prisma.$transaction((tx) => billNextPeriod(tx, id, asOf));
+    if (!made) break;
+    created += 1;
+  }
+  return created;
+}
+
+// Bills everything that is due. Safe to call twice: the second call finds nothing to do.
+export async function runBilling(asOf = todayIn(env.APP_TZ)) {
+  if (state.running) return billingStatus();
+  Object.assign(state, {
+    running: true,
+    startedAt: new Date(),
+    finishedAt: null,
+    processed: 0,
+    invoicesCreated: 0,
+    failed: [],
+  });
+
+  try {
+    let cursor = 0;
+    for (;;) {
+      const batch = await prisma.subscription.findMany({
+        where: { status: 'ACTIVE', isPaused: false, nextInvoiceDate: { lte: asOf }, id: { gt: cursor } },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: 200,
+      });
+      if (batch.length === 0) break;
+      for (const { id } of batch) {
+        try {
+          state.invoicesCreated += await billSubscription(id, asOf);
+        } catch (e) {
+          if (e.code !== 'P2002' && e.code !== 'P2025') {
+            state.failed.push({ subscriptionId: id, error: e.message });
+          }
+        }
+        state.processed += 1;
+      }
+      cursor = batch[batch.length - 1].id;
+    }
+  } finally {
+    state.running = false;
+    state.finishedAt = new Date();
+  }
+  return billingStatus();
+}
