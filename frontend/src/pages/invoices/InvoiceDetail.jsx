@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -17,14 +18,18 @@ import {
   Calendar,
   Layers,
   CreditCard,
+  Send,
+  BellRing,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { inr, date, due } from '../../lib/format';
+import RecordPaymentModal from './RecordPaymentModal';
 
 export default function InvoiceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
   const { data: invoice, isLoading, error } = useQuery({
     queryKey: ['invoice', id],
@@ -40,6 +45,27 @@ export default function InvoiceDetail() {
     },
     onError: (err) => {
       toast.error(err.message || 'Failed to confirm invoice');
+    },
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: () => api.post(`/invoices/${id}/send`),
+    onSuccess: (res) => {
+      toast.success(res.message || 'Invoice sent to customer email');
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+    },
+    onError: (err) => {
+      toast.error(err.message || 'Failed to send invoice');
+    },
+  });
+
+  const remindMutation = useMutation({
+    mutationFn: () => api.post(`/invoices/${id}/remind`),
+    onSuccess: (res) => {
+      toast.success(res.message || 'Overdue reminder email sent');
+    },
+    onError: (err) => {
+      toast.error(err.message || 'Failed to send reminder');
     },
   });
 
@@ -153,6 +179,38 @@ export default function InvoiceDetail() {
             >
               <FileCheck className="w-4 h-4" />
               {confirmMutation.isPending ? 'Confirming...' : 'Confirm Invoice'}
+            </button>
+          )}
+
+          {isConfirmed && amountDue > 0 && (
+            <button
+              onClick={() => setIsPaymentModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors"
+            >
+              <CreditCard className="w-4 h-4" />
+              Record Payment
+            </button>
+          )}
+
+          {(isConfirmed || isPaid) && (
+            <button
+              onClick={() => sendMutation.mutate()}
+              disabled={sendMutation.isPending}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              <Send className="w-4 h-4 text-slate-500" />
+              {sendMutation.isPending ? 'Sending...' : invoice.sentAt ? 'Resend Invoice' : 'Send Invoice'}
+            </button>
+          )}
+
+          {isOverdue && (
+            <button
+              onClick={() => remindMutation.mutate()}
+              disabled={remindMutation.isPending}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+            >
+              <BellRing className="w-4 h-4" />
+              {remindMutation.isPending ? 'Sending...' : 'Send Reminder'}
             </button>
           )}
 
@@ -422,6 +480,17 @@ export default function InvoiceDetail() {
           </div>
         </div>
       )}
+
+      {/* Record Payment Modal */}
+      <RecordPaymentModal
+        invoice={invoice}
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+          queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        }}
+      />
     </div>
   );
 }

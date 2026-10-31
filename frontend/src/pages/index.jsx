@@ -31,5 +31,5 @@ export { default as DiscountForm } from './discounts/DiscountForm';
 export const BillingRun = placeholder('Run billing');            // C
 export { default as InvoiceList } from './invoices/InvoiceList';
 export { default as InvoiceDetail } from './invoices/InvoiceDetail';
-export const PrintInvoice = placeholder('Print invoice');        // C
-export const PaymentList = placeholder('Payments');              // C
+export { default as PrintInvoice } from './invoices/PrintInvoice';
+export { default as PaymentList } from './payments/PaymentList';
