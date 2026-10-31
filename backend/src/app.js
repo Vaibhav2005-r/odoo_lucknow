@@ -3,6 +3,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { rateLimit } from 'express-rate-limit';
+import { env } from './config/env.js';
 import { requireAuth } from './middleware/auth.js';
 import { errorHandler } from './middleware/error.js';
 
@@ -23,6 +24,7 @@ import paymentRoutes from './modules/payments/payments.routes.js';
 import reportRoutes from './modules/reports/reports.routes.js';
 
 export const app = express();
+if (env.TRUST_PROXY) app.set('trust proxy', env.TRUST_PROXY); // correct client IPs for rate limiting behind nginx
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());

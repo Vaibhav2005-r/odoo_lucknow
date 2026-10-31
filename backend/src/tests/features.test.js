@@ -659,3 +659,55 @@ t('customers, taxes, payment terms and discount updates', async () => {
   assert.equal((await call('staff', 'GET', '/discounts')).status, 200);
   assert.equal((await call('riya', 'GET', '/discounts')).status, 403, 'discount rules are internal');
 });
+
+t('signup with an email that already has a customer record does not expose that customer until the email is verified', async () => {
+  const owner = await newCustomer('Claimed Co');
+  await liveSub(owner, S.monthly);
+  const body = { name: 'Someone Else', email: owner.email, password: 'Abcdefg1!', confirmPassword: 'Abcdefg1!' };
+
+  const signup = await call('anon', 'POST', '/auth/signup', body);
+  assert.equal(signup.status, 201, JSON.stringify(signup.body));
+  assert.equal(signup.body.emailVerified, false);
+  assert.equal(signup.body.customerId, null, 'the existing customer record is not attached yet');
+  keep('claimer', signup.res);
+
+  // until the address is proven, none of that customer's data is visible
+  assert.equal((await call('claimer', 'GET', '/subscriptions')).body.data.length, 0);
+  assert.equal((await call('claimer', 'GET', '/invoices')).body.data.length, 0);
+  assert.equal((await call('claimer', 'GET', '/customers/portal-summary')).body.data.activeSubscriptions, 0);
+
+  const first = await waitMail(owner.email, (m) => /verify-email\?token=/.test(m));
+  assert.ok(first, 'confirmation e-mail arrived');
+  const token1 = /token=([0-9a-f]{64})/.exec(first)[1];
+
+  assert.equal((await call('anon', 'POST', '/auth/verify-email', { token: 'f'.repeat(64) })).status, 400, 'unknown link');
+  assert.equal((await call('anon', 'POST', '/auth/verify-email', { token: 'short' })).status, 422);
+
+  // resend works for the signed-in user, and the older link still works
+  assert.equal((await call('claimer', 'POST', '/auth/resend-verification')).status, 200);
+  const done = await call('claimer', 'POST', '/auth/verify-email', { token: token1 });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  keep('claimer', done.res); // the session is refreshed so the new customer link applies at once
+  assert.equal(done.body.user.emailVerified, true);
+  assert.ok(done.body.user.customerId, 'customer record is attached after verification');
+
+  assert.equal((await call('claimer', 'GET', '/subscriptions')).body.data.length, 1, 'now their own data is visible');
+  assert.equal((await call('claimer', 'GET', '/auth/me')).body.emailVerified, true);
+  assert.equal((await call('anon', 'POST', '/auth/verify-email', { token: token1 })).status, 400, 'a link works only once');
+  assert.equal((await call('claimer', 'POST', '/auth/resend-verification')).body.message, 'Your email is already confirmed.');
+});
+
+t('a customer login without any customer record sees nothing, and admin-created staff are already verified', async () => {
+  const email = `orphan.${tag}@example.com`;
+  const bcrypt = (await import('bcryptjs')).default;
+  await prisma.user.create({ data: { name: 'Orphan', email, role: 'CUSTOMER', passwordHash: await bcrypt.hash('Orphan#Pass1', 10) } });
+  await login('orphan', email, 'Orphan#Pass1');
+  assert.equal((await call('orphan', 'GET', '/subscriptions')).body.data.length, 0);
+  assert.equal((await call('orphan', 'GET', '/invoices')).body.data.length, 0);
+  assert.equal((await call('orphan', 'GET', '/payments')).body.data.length, 0);
+
+  const staff = await call('admin', 'POST', '/users', { name: 'Vouched Staff', email: `vouched.${tag}@brightloop.in`, password: 'Staffer1!x', role: 'STAFF' });
+  assert.equal(staff.status, 201);
+  await login('vouched', `vouched.${tag}@brightloop.in`, 'Staffer1!x');
+  assert.equal((await call('vouched', 'GET', '/auth/me')).body.emailVerified, true);
+});

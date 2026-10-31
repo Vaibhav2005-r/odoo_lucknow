@@ -430,6 +430,8 @@ tbody tr {
 .hero a.hero-cta, :root[data-theme="dark"] .hero a.hero-cta { background-color: #fff; color: var(--color-brand-700); }
 .hero a.hero-cta:hover { background-color: #fff; color: var(--color-brand-600); }
 
+.bare-input:focus, .bare-input:focus-visible { box-shadow: none !important; border-color: transparent !important; background-color: transparent !important; }
+
 /* Frosted-glass helper used by the header and sidebar */
 .glass {
   background-color: rgb(255 255 255 / 0.72);

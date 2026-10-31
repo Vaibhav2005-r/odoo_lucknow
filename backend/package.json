@@ -11,7 +11,8 @@
     "db:studio": "prisma studio",
     "seed": "node prisma/seed.js",
     "seed:bulk": "node prisma/seed-bulk.js",
-    "test": "node --test src/tests/*.test.js"
+    "test": "node --test src/tests/*.test.js",
+    "db:deploy": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

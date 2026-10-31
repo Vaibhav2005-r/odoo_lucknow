@@ -10,6 +10,8 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET,
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:5173',
   APP_TZ: process.env.APP_TZ || 'Asia/Kolkata',
+  // number of reverse proxies in front of the API (nginx, a load balancer). 0 = none, so X-Forwarded-For is ignored.
+  TRUST_PROXY: Number(process.env.TRUST_PROXY || 0),
   COMPANY_NAME: process.env.COMPANY_NAME || 'Brightloop Software',
   SMTP: {
     host: process.env.SMTP_HOST || 'localhost',

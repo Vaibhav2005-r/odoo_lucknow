@@ -223,7 +223,7 @@ export default function BillingRun() {
           </div>
           <p className="text-xs text-slate-600 leading-relaxed">
             In addition to manual runs, LoopBill includes an automated cron daemon that triggers every day at{' '}
-            <strong>02:00 AM IST</strong>.
+            <strong>12:05 AM IST</strong>. It also catches up on startup if the server was off, so no billing day is skipped.
           </p>
           <p className="text-xs text-slate-500 leading-relaxed">
             All generated invoices are placed in <strong>DRAFT</strong> status so your finance and operations team can

@@ -56,6 +56,7 @@ const publicUser = (u) => ({
   email: u.email,
   role: u.role,
   customerId: u.customer?.id ?? null,
+  emailVerified: Boolean(u.emailVerifiedAt),
 });
 
 function startSession(res, user) {
@@ -72,6 +73,21 @@ function startSession(res, user) {
   });
 }
 
+// Sends the "confirm your e-mail" link. Never throws: a mail problem must not break signup.
+async function sendVerification(user) {
+  const raw = crypto.randomBytes(32).toString('hex');
+  await prisma.emailVerificationToken.create({
+    data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 48 * 3600 * 1000) },
+  });
+  const link = `${env.CLIENT_URL}/verify-email?token=${raw}`;
+  await sendMail({
+    to: user.email,
+    subject: 'Confirm your LoopBill email',
+    html: `<p>Hi ${user.name},</p><p><a href="${link}">Confirm your email address</a> to finish setting up your account. `
+      + 'The link works once and expires in 48 hours.</p>',
+  });
+}
+
 router.post('/signup', validate(signupSchema), async (req, res) => {
   const { name, email: mail, password: pwd } = req.body;
   if (await prisma.user.findUnique({ where: { email: mail } })) {
@@ -80,14 +96,13 @@ router.post('/signup', validate(signupSchema), async (req, res) => {
   const passwordHash = await bcrypt.hash(pwd, 10);
   const user = await prisma.$transaction(async (tx) => {
     const u = await tx.user.create({ data: { name, email: mail, passwordHash, role: 'CUSTOMER' } });
-    const existing = await tx.customer.findUnique({ where: { email: mail } }); // staff may have created it
-    if (existing && !existing.userId) {
-      await tx.customer.update({ where: { id: existing.id }, data: { userId: u.id } });
-    } else if (!existing) {
-      await tx.customer.create({ data: { name, email: mail, userId: u.id } });
-    }
+    // A customer record staff already created for this e-mail holds real data, so it is NOT linked until the
+    // owner proves they control the address (see /verify-email). A brand-new e-mail has nothing to protect.
+    const existing = await tx.customer.findUnique({ where: { email: mail } });
+    if (!existing) await tx.customer.create({ data: { name, email: mail, userId: u.id } });
     return tx.user.findUnique({ where: { id: u.id }, include: { customer: true } });
   });
+  await sendVerification(user);
   startSession(res, user);
   res.status(201).json(publicUser(user));
 });
@@ -98,6 +113,48 @@ router.post('/login', validate(loginSchema), async (req, res) => {
   if (!ok) throw httpError(401, 'Invalid email or password');
   startSession(res, user);
   res.json(publicUser(user));
+});
+
+// Confirms the e-mail address from the emailed link. This is also the moment an existing customer record
+// (created earlier by staff) is attached to the account.
+const verifySchema = z.object({ token: z.string().length(64, 'Invalid verification link') });
+
+router.post('/verify-email', validate(verifySchema), async (req, res) => {
+  const rec = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash: sha256(req.body.token) },
+    include: { user: true },
+  });
+  if (!rec || rec.usedAt || rec.expiresAt < new Date()) {
+    throw httpError(400, 'This verification link is invalid or has expired. Request a new one from your account.');
+  }
+  const user = await prisma.$transaction(async (tx) => {
+    await tx.emailVerificationToken.update({ where: { id: rec.id }, data: { usedAt: new Date() } });
+    await tx.user.update({ where: { id: rec.userId }, data: { emailVerifiedAt: new Date() } });
+    const mine = await tx.customer.findUnique({ where: { userId: rec.userId } });
+    if (!mine) {
+      const byEmail = await tx.customer.findUnique({ where: { email: rec.user.email } });
+      if (byEmail && !byEmail.userId) await tx.customer.update({ where: { id: byEmail.id }, data: { userId: rec.userId } });
+      else if (!byEmail) await tx.customer.create({ data: { name: rec.user.name, email: rec.user.email, userId: rec.userId } });
+    }
+    return tx.user.findUnique({ where: { id: rec.userId }, include: { customer: true } });
+  });
+
+  // If the person is signed in as this user, refresh their session so the new customer link takes effect.
+  try {
+    const current = jwt.verify(req.cookies?.token || '', env.JWT_SECRET);
+    if (Number(current.sub) === user.id) startSession(res, user);
+  } catch {
+    /* not signed in: they can log in normally */
+  }
+  res.json({ message: 'Email confirmed.', user: publicUser(user) });
+});
+
+router.post('/resend-verification', requireAuth, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user || !user.isActive) throw httpError(401, 'Please log in again');
+  if (user.emailVerifiedAt) return res.json({ message: 'Your email is already confirmed.' });
+  await sendVerification(user);
+  return res.json({ message: 'Confirmation email sent.' });
 });
 
 router.post('/logout', (req, res) => {

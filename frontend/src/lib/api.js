@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const PUBLIC = ['/login', '/signup', '/forgot-password', '/reset-password'];
+const PUBLIC = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email'];
 
 export const api = axios.create({ baseURL: '/api' });
 

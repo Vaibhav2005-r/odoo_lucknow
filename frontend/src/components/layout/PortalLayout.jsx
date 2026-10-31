@@ -12,6 +12,7 @@ import {
   CreditCard,
   ShieldCheck,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import ThemeToggle from '../ThemeToggle';
 import Hero from '../Hero';
 import { inr } from '../../lib/format';
@@ -220,6 +221,25 @@ export default function PortalLayout() {
           </div>
         )}
       </header>
+
+      {user && user.emailVerified === false && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-800">
+          Please confirm your email address.{' '}
+          {!user.customerId && 'Existing subscriptions linked to this email appear once it is confirmed. '}
+          <button
+            type="button"
+            className="font-semibold underline underline-offset-2 hover:text-amber-900"
+            onClick={() =>
+              api
+                .post('/auth/resend-verification')
+                .then((r) => toast.success(r.message || 'Confirmation email sent'))
+                .catch((e) => toast.error(e.message || 'Could not send the email'))
+            }
+          >
+            Resend the email
+          </button>
+        </div>
+      )}
 
       <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
         {pathname === '/portal' && (

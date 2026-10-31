@@ -61,6 +61,7 @@ router.post('/', validate(createUserSchema), async (req, res) => {
       passwordHash,
       role,
       isActive: true,
+      emailVerifiedAt: new Date(), // an admin vouches for accounts they create
     },
     select: {
       id: true,

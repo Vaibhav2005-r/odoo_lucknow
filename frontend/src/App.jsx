@@ -41,6 +41,7 @@ export default function App() {
             <Route path="/signup" element={<P.Signup />} />
             <Route path="/forgot-password" element={<P.ForgotPassword />} />
             <Route path="/reset-password" element={<P.ResetPassword />} />
+            <Route path="/verify-email" element={<P.VerifyEmail />} />
 
             <Route path="/app" element={<RequireRole roles={IN}><AppLayout /></RequireRole>}>
               <Route index element={<Navigate to="dashboard" replace />} />

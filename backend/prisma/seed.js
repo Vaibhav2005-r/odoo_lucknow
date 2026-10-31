@@ -17,19 +17,19 @@ async function main() {
   const admin = await prisma.user.upsert({
     where: { email: 'admin@brightloop.in' },
     update: {},
-    create: { name: 'Asha Admin', email: 'admin@brightloop.in', role: 'ADMIN', passwordHash: await hash('Admin@12345') },
+    create: { name: 'Asha Admin', email: 'admin@brightloop.in', role: 'ADMIN', emailVerifiedAt: new Date(), passwordHash: await hash('Admin@12345') },
   });
 
   const staff = await prisma.user.upsert({
     where: { email: 'staff@brightloop.in' },
     update: {},
-    create: { name: 'Sam Staff', email: 'staff@brightloop.in', role: 'STAFF', passwordHash: await hash('Staff@12345') },
+    create: { name: 'Sam Staff', email: 'staff@brightloop.in', role: 'STAFF', emailVerifiedAt: new Date(), passwordHash: await hash('Staff@12345') },
   });
 
   const riyaUser = await prisma.user.upsert({
     where: { email: 'riya@sharmaretail.in' },
     update: {},
-    create: { name: 'Riya Sharma', email: 'riya@sharmaretail.in', role: 'CUSTOMER', passwordHash: await hash('Customer@123') },
+    create: { name: 'Riya Sharma', email: 'riya@sharmaretail.in', role: 'CUSTOMER', emailVerifiedAt: new Date(), passwordHash: await hash('Customer@123') },
   });
 
   const gst18 = await prisma.tax.upsert({
