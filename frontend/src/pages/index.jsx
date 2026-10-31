@@ -7,8 +7,8 @@ export { default as Signup } from './auth/Signup';
 export { default as ForgotPassword } from './auth/ForgotPassword';
 export { default as ResetPassword } from './auth/ResetPassword';
 export { default as Users } from './users/Users';
-export const CustomerList = placeholder('Customers');            // A
-export const CustomerDetail = placeholder('Customer');           // A
+export { default as CustomerList } from './customers/CustomerList';
+export { default as CustomerDetail } from './customers/CustomerDetail';
 export { default as Taxes } from './config/Taxes';
 export { default as PaymentTerms } from './config/PaymentTerms';
 export const MySubscriptions = placeholder('My subscriptions');  // A
