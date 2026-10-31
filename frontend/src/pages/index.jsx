@@ -26,8 +26,8 @@ export const SubscriptionList = placeholder('Subscriptions');    // B
 export const SubscriptionForm = placeholder('New subscription'); // B
 export const SubscriptionDetail = placeholder('Subscription');   // B
 export const Dashboard = placeholder('Dashboard');               // C
-export const DiscountList = placeholder('Discounts');            // C
-export const DiscountForm = placeholder('Discount');             // C
+export { default as DiscountList } from './discounts/DiscountList';
+export { default as DiscountForm } from './discounts/DiscountForm';
 export const BillingRun = placeholder('Run billing');            // C
 export const InvoiceList = placeholder('Invoices');              // C
 export const InvoiceDetail = placeholder('Invoice');             // C
