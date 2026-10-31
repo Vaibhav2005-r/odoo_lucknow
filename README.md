@@ -183,7 +183,7 @@ The app runs at `http://localhost:5173`.
 
 ## Demo accounts
 
-Created by `npm run seed`, together with sample products, plans, templates, discounts, subscriptions, invoices and payments.
+Created by `npm run seed`, together with sample products (including the Odoo brand +560 variant), daily/weekly/monthly/yearly plans, quotation templates, discounts, and subscriptions in every state with invoices (paid, outstanding, overdue and draft) and payments.
 
 | Role | Email | Password |
 |---|---|---|
@@ -198,7 +198,23 @@ cd backend
 npm test
 ```
 
-Unit tests need nothing else. The API integration test in `catalog-subscriptions.test.js` needs the seeded database and is skipped when it is not reachable.
+| Suite | What it covers |
+|---|---|
+| Unit tests | billing maths, password rule, tax and discount validation, role checks |
+| `catalog-subscriptions.test.js` | products, variants, plans, templates, the full subscription lifecycle |
+| `features.test.js` | every feature in the brief against a real database: signup and password rules, reset by e-mail (a small SMTP sink stands in for Mailpit), roles, billing catch-up and no double billing, daily/weekly/monthly/yearly periods, pause and resume, plan rules and auto-close, taxes, discounts (limits, dates, minimums), invoices, payments, overdue, reconcile, portal isolation and reports |
+| `performance.test.js` | every list, search, detail and report endpoint answers in under 2 seconds with thousands of subscriptions |
+
+The database-backed suites need the seeded database and skip themselves when it is not reachable. The performance suite also needs the bulk data below.
+
+### Large data set
+
+```bash
+npm run seed:bulk            # 3000 subscriptions with invoices and payments
+npm run seed:bulk -- 10000   # or choose a size
+```
+
+With 5,000 subscriptions and about 40,000 invoices every endpoint responds in under 40 ms.
 
 ## Project structure
 
