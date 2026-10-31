@@ -1,5 +1,6 @@
 {
   "name": "loopbill-api",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +11,7 @@
     "db:studio": "prisma studio",
     "seed": "node prisma/seed.js",
     "seed:bulk": "node prisma/seed-bulk.js",
-    "test": "node --test src/tests/billing-core.test.js"
+    "test": "node --test src/tests/*.test.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
