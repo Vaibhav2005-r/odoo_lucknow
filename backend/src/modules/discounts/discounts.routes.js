@@ -91,7 +91,7 @@ const listQuerySchema = z.object({
 });
 
 // GET /api/discounts - List discounts (Admin + Staff)
-router.get('/', validate(listQuerySchema, 'query'), async (req, res) => {
+router.get('/', requireRole('ADMIN', 'STAFF'), validate(listQuerySchema, 'query'), async (req, res) => {
   const q = req.valid?.query || {};
   const where = {
     ...(q.scope ? { scope: q.scope } : {}),
@@ -112,7 +112,7 @@ router.get('/', validate(listQuerySchema, 'query'), async (req, res) => {
 });
 
 // GET /api/discounts/:id - View single discount (Admin + Staff)
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireRole('ADMIN', 'STAFF'), async (req, res) => {
   const id = paramId(req);
   const discount = await prisma.discount.findUnique({
     where: { id },

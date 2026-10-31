@@ -91,7 +91,7 @@ router.get('/export', validate(listQuerySchema, 'query'), async (req, res, next)
 // POST /api/payments/reconcile - Lump sum auto-allocation across oldest unpaid customer invoices
 router.post('/reconcile', requireRole('ADMIN', 'STAFF'), validate(reconcileSchema), async (req, res, next) => {
   try {
-    const result = await reconcileCustomerPayment(req.valid.body, req.user?.id);
+    const result = await reconcileCustomerPayment(req.body, req.user?.id);
     res.status(201).json({
       message: `Successfully allocated ₹${result.totalAllocated} across ${result.reconciledInvoicesCount} invoices`,
       ...result,
@@ -151,7 +151,7 @@ router.get('/', validate(listQuerySchema, 'query'), async (req, res) => {
 // POST /api/payments - Record a manual payment against an invoice
 router.post('/', requireRole('ADMIN', 'STAFF'), validate(paymentSchema.extend({ invoiceId: z.coerce.number().int().positive() })), async (req, res, next) => {
   try {
-    const { invoiceId, ...rest } = req.valid.body;
+    const { invoiceId, ...rest } = req.body;
     const payment = await recordPayment(invoiceId, rest, req.user?.id);
     res.status(201).json(payment);
   } catch (err) {
