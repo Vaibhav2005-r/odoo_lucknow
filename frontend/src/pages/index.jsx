@@ -29,7 +29,7 @@ export const Dashboard = placeholder('Dashboard');               // C
 export { default as DiscountList } from './discounts/DiscountList';
 export { default as DiscountForm } from './discounts/DiscountForm';
 export const BillingRun = placeholder('Run billing');            // C
-export const InvoiceList = placeholder('Invoices');              // C
-export const InvoiceDetail = placeholder('Invoice');             // C
+export { default as InvoiceList } from './invoices/InvoiceList';
+export { default as InvoiceDetail } from './invoices/InvoiceDetail';
 export const PrintInvoice = placeholder('Print invoice');        // C
 export const PaymentList = placeholder('Payments');              // C
