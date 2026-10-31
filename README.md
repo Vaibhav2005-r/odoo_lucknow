@@ -1,6 +1,8 @@
 # LoopBill — Subscription Management System
 
-> Problem statement: *"Subscription Management System — Build one system to run plans, subscriptions and recurring billing in one place."* (Brightloop Software)
+> **Problem Statement:** *"Subscription Management System — Build one system to run plans, subscriptions and recurring billing in one place."*
+>
+> — Brightloop Software
 
 LoopBill runs Brightloop's subscription business in one web app:
 - **Catalog** — products (with variants), recurring plans, taxes, discounts, payment terms
