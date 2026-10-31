@@ -14,6 +14,9 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 - **Taxes and discounts** — admin-defined tax rules; fixed or percentage discounts with minimum purchase or quantity, date range and usage limit, applied automatically to products or whole subscriptions.
 - **Invoices and payments** — confirm, cancel, send and print invoices (Draft → Confirmed → Paid); record payments by method, amount, date and note; see paid, outstanding and overdue at any time.
 - **Look and feel** — light, dark or follow-the-system theme (saved per browser, no flash on load), an animated sign-in page with a reactive mascot, branded sidebar, and a hero banner with live figures on the dashboard and customer portal. Printable invoices always stay light.
+- **Indian GST** — invoices are split into CGST + SGST (customer in our state) or IGST (another state), decided by the customer's state or GSTIN. Taxes have a type (GST or other, such as a cess), products carry HSN/SAC codes, GSTINs are validated, and a GST summary (by month and by rate, with CSV export) is ready for your accountant.
+- **Automatic reminders** — customers are e-mailed 3 days before an invoice is due, 1, 7, 14 and 30 days after it is overdue, and 30 and 7 days before a subscription expires. Each reminder is sent once, in the daytime, and a mail outage never loses one.
+- **Online payments** — customers pay a confirmed invoice from the portal with Razorpay (UPI, cards, net banking). Without Razorpay keys a built-in test checkout is used for demos. Payments are confirmed by signature and by webhook, and can never be recorded twice.
 - **Reports** — active subscriptions, MRR/ARR, revenue collected, amount owed and overdue invoices, with filters.
 
 ## Screenshots
@@ -34,6 +37,13 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 |---|---|
 | **Dashboard**<br>![Dashboard in dark mode](docs/screenshots/dashboard-dark.png) | **Subscriptions**<br>![Subscriptions in dark mode](docs/screenshots/subscriptions-dark.png) |
 | **Customer portal**<br>![Portal in dark mode](docs/screenshots/portal-dark.png) | **Sign in**<br>![Sign in, dark mode](docs/screenshots/login-dark.png) |
+
+### GST, checkout and customers
+
+| | |
+|---|---|
+| **GST invoice** — per-line HSN/SAC, IGST for an out-of-state customer, place of supply<br>![GST invoice](docs/screenshots/invoice-gst.png) | **Pay now** — the portal checkout (test mode shown)<br>![Checkout](docs/screenshots/checkout.png) |
+| **Customer GST details** — a valid GSTIN fills in the state<br>![Customer GST fields](docs/screenshots/customer-gst.png) | |
 
 ### Customer portal
 
@@ -198,6 +208,31 @@ docker compose exec api npm run seed
 
 The app is then at `http://localhost:8080` (nginx serves the frontend and proxies `/api` to the API; the API applies database migrations on start). Set `JWT_SECRET` in your environment first; terminate TLS in front of nginx for anything beyond a local demo. Plain `docker compose up -d` still starts only PostgreSQL and Mailpit for local development.
 
+## Configuration
+
+Set these in `backend/.env` (see `.env.example`). Everything has a sensible default except the database and the secret.
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL`, `JWT_SECRET` | required |
+| `CLIENT_URL` | public address of the web app, used in e-mail links |
+| `COMPANY_NAME`, `COMPANY_ADDRESS`, `COMPANY_GSTIN` | printed on invoices; the first two digits of the GSTIN are our state, which decides CGST + SGST versus IGST |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | outgoing e-mail |
+| `REMINDERS_ENABLED`, `REMINDER_HOUR`, `REMINDER_BATCH_LIMIT` | automatic reminders: on/off (default on), hour to send (default 9), most e-mails per run (default 500) |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | turn on Razorpay checkout |
+| `PAYMENT_GATEWAY` | `mock` (built-in test checkout, the default outside production) or `none` |
+| `TRUST_PROXY` | number of reverse proxies in front of the API (set to 1 behind nginx) |
+
+### Online payments with Razorpay
+
+1. Create a Razorpay account and copy the **test mode** key id and secret into `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`.
+2. In the Razorpay dashboard add a webhook to `https://<your-host>/api/webhooks/razorpay` for the events `payment.captured`, `order.paid` and `payment.failed`, and put its secret in `RAZORPAY_WEBHOOK_SECRET`.
+3. Restart the API. Customers now see **Pay** on a confirmed invoice.
+
+The customer's browser confirms a payment with a signed response and Razorpay confirms it again by webhook; whichever arrives first records it and the other is ignored. If money arrives for an invoice that was settled by hand in the meantime, it is flagged for review (`GET /api/payments/intents?status=REVIEW`) rather than lost or doubled. Outside production the no-money "simulated pay" shortcut stays available only on the test gateway; in production, online payment stays off until keys are set.
+
+The Razorpay integration is covered by tests that replace Razorpay's API with a stub (order creation, signatures, webhooks, retries, forged requests). Run one real test-mode payment before going live.
+
 ## Demo accounts
 
 Created by `npm run seed`, together with sample products (including the Odoo brand +560 variant), daily/weekly/monthly/yearly plans, quotation templates, discounts, and subscriptions in every state with invoices (paid, outstanding, overdue and draft) and payments.
@@ -220,6 +255,9 @@ npm test
 | Unit tests | billing maths, password rule, tax and discount validation, role checks |
 | `catalog-subscriptions.test.js` | products, variants, plans, templates, the full subscription lifecycle |
 | `features.test.js` | every feature in the brief against a real database: signup, email confirmation and password rules, reset by e-mail (a small SMTP sink stands in for Mailpit), roles, billing catch-up and no double billing, daily/weekly/monthly/yearly periods, pause and resume, plan rules and auto-close, taxes, discounts (limits, dates, minimums), invoices, payments, overdue, reconcile, portal isolation and reports |
+| `gst.test.js` | GSTIN rules, CGST/SGST/IGST splitting (including odd paise and cess), invoices through the real billing engine for same-state and other-state customers, HSN/SAC, the GST summary and its CSV |
+| `reminders.test.js` | every reminder stage, once only, retries after a failed send, the mail-outage breaker, the per-run cap, renewal reminders |
+| `checkout.test.js` | online payments: signatures, the test gateway, a stubbed Razorpay (orders, browser confirmation, webhooks, replays, forged requests), races, and money that cannot be applied |
 | `performance.test.js` | every list, search, detail and report endpoint answers in under 2 seconds with thousands of subscriptions |
 
 The database-backed suites need the seeded database and skip themselves when it is not reachable. The performance suite also needs the bulk data below.
@@ -270,7 +308,18 @@ All routes are under `/api` and need a login except `/api/auth`.
 | `/subscriptions` | create, edit, send-quotation, confirm, activate, pause, resume, renew, close, add-on lines |
 | `/billing` | run billing, billing status |
 | `/invoices`, `/payments` | invoices and payment recording |
-| `/reports` | summary and revenue by month |
+| `/reports` | summary, revenue by month, GST summary (`/gst-summary`, `/export-gst`) |
+| `/reminders` | log of automatic reminders, run them on demand (admin) |
+| `/payments/gateway`, `/invoices/:id/checkout` | online payment: which gateway is on, start a payment, confirm it |
+| `/webhooks/razorpay` | Razorpay's signed notifications (no login; verified by signature) |
+| `/company` | our name, GSTIN and address, and the GST state list |
+
+## GST rules
+
+- Same state as `COMPANY_GSTIN` (customer's state, else the state in their GSTIN, else assumed local): GST is halved into CGST and SGST. Any other state: IGST.
+- Taxes marked **Other** (a cess, for example) are charged as they are and never split.
+- The split is recorded on every invoice and line at the time it is issued, together with our GSTIN, the place of supply and each product's HSN/SAC, so later changes to a customer or a rate never rewrite history.
+- A GSTIN is checked for format and state code (not the check digit, which many test GSTINs fail).
 
 ## Billing rules
 
