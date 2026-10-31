@@ -15,6 +15,122 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 - **Invoices and payments** — confirm, cancel, send and print invoices (Draft → Confirmed → Paid); record payments by method, amount, date and note; see paid, outstanding and overdue at any time.
 - **Reports** — active subscriptions, MRR/ARR, revenue collected, amount owed and overdue invoices, with filters.
 
+## Screenshots
+
+### Admin and staff
+
+| | |
+|---|---|
+| **Dashboard** — active subscriptions, MRR/ARR, collected, outstanding and overdue, 12-month chart<br>![Dashboard](docs/screenshots/dashboard.png) | **Subscriptions** — filter by status and plan<br>![Subscriptions](docs/screenshots/subscriptions.png) |
+| **Subscription detail** — lifecycle actions, line items, invoices, activity log<br>![Subscription detail](docs/screenshots/subscription-detail.png) | **New subscription** — plan, quantity, variant, terms, discount and add-ons<br>![New subscription](docs/screenshots/subscription-new.png) |
+| **Products and variants**<br>![Products](docs/screenshots/products.png) | **Plans**<br>![Plans](docs/screenshots/plans.png) |
+| **Quotation templates**<br>![Quotation templates](docs/screenshots/templates.png) | **Invoices** — draft, outstanding, overdue, paid<br>![Invoices](docs/screenshots/invoices.png) |
+| **Payments**<br>![Payments](docs/screenshots/payments.png) | **Run billing**<br>![Run billing](docs/screenshots/billing-run.png) |
+
+### Customer portal
+
+| | |
+|---|---|
+| **My subscriptions**<br>![Portal subscriptions](docs/screenshots/portal-subscriptions.png) | **My invoices**<br>![Portal invoices](docs/screenshots/portal-invoices.png) |
+
+### Sign in
+
+![Login](docs/screenshots/login.png)
+
+## How it works
+
+### Architecture
+
+```mermaid
+flowchart LR
+    subgraph Client
+        UI["React app<br/>admin / staff screens + customer portal"]
+    end
+    subgraph Server["Express API"]
+        MW["Auth + RBAC<br/>validation, errors"]
+        MOD["Modules<br/>catalog, subscriptions, billing,<br/>invoices, payments, reports"]
+        JOB["Nightly job 00:05<br/>activate, bill, auto-close"]
+    end
+    DB[("PostgreSQL<br/>via Prisma")]
+    MAIL["SMTP / Mailpit"]
+
+    UI -- "REST /api + httpOnly cookie" --> MW --> MOD
+    JOB --> MOD
+    MOD --> DB
+    MOD -- "quotations, invoices,<br/>reset links" --> MAIL
+```
+
+### Subscription lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Quotation: send quotation
+    Quotation --> Confirmed: customer accepts or staff confirms
+    Draft --> Confirmed: staff confirms
+    Confirmed --> Active: start date reached or activated
+    Active --> Active: pause / resume / renew / switch add-ons
+    Active --> Closed: close early or auto-close at expiry
+    Draft --> Closed
+    Quotation --> Closed
+    Confirmed --> Closed
+    Closed --> [*]
+```
+
+Pause, early close, renewal and auto-close are allowed per plan, according to the plan's flags.
+
+### Invoice lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft: created from subscription
+    Draft --> Confirmed: confirm
+    Draft --> Cancelled: cancel
+    Confirmed --> Paid: payments cover the total
+    Confirmed --> Cancelled: cancel (no payments)
+    Paid --> [*]
+    Cancelled --> [*]
+```
+
+### Billing run
+
+```mermaid
+sequenceDiagram
+    participant T as Nightly job / Run Billing
+    participant S as Billing service
+    participant D as Database
+    T->>S: run(today)
+    S->>D: active, unpaused subscriptions with next invoice date <= today
+    loop each subscription, each missed period
+        S->>S: price lines, apply discounts, add taxes (in paise)
+        S->>D: create draft invoice (unique per subscription + period start)
+        S->>D: use up discounts, move next invoice date forward
+    end
+    Note over S,D: A second run finds nothing to bill, so nothing is billed twice
+```
+
+### Data model
+
+```mermaid
+erDiagram
+    CUSTOMER ||--o{ SUBSCRIPTION : has
+    CUSTOMER ||--o{ INVOICE : receives
+    PLAN ||--o{ SUBSCRIPTION : "sold as"
+    PRODUCT ||--o{ PLAN : "priced by"
+    PRODUCT ||--o{ PRODUCT_VARIANT : "comes in"
+    PRODUCT }o--o{ TAX : "taxed by"
+    QUOTATION_TEMPLATE ||--o{ TEMPLATE_LINE : contains
+    QUOTATION_TEMPLATE ||--o{ SUBSCRIPTION : "starts"
+    PAYMENT_TERM ||--o{ SUBSCRIPTION : "applies to"
+    DISCOUNT }o--o{ PRODUCT : "product scope"
+    DISCOUNT ||--o{ SUBSCRIPTION : "subscription scope"
+    SUBSCRIPTION ||--|{ SUBSCRIPTION_LINE : has
+    SUBSCRIPTION ||--o{ SUBSCRIPTION_LOG : "audit trail"
+    SUBSCRIPTION ||--o{ INVOICE : "billed as"
+    INVOICE ||--|{ INVOICE_LINE : has
+    INVOICE ||--o{ PAYMENT : "settled by"
+```
+
 ## Tech stack
 
 | Layer | Technology |

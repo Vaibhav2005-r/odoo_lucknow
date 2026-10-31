@@ -157,6 +157,7 @@ t('subscription from template: prices, taxes, minimum quantity, whole lifecycle'
   await runBilling();
   const after = await call('staff', 'GET', `/subscriptions/${sub.id}`);
   assert.equal(after.body.data.invoices.length, 1);
+  assert.equal(after.body.data.plan.productId, ids.product); // pages tell the plan line from add-ons by this
   assert.equal(Number(after.body.data.invoices[0].amountTotal), 5640.4);
 });
 

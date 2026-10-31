@@ -204,50 +204,7 @@ router.post('/', requireRole('ADMIN', 'STAFF'), validate(createSchema), async (r
 router.get('/:id', requireAuth, async (req, res) => {
   const id = paramId(req);
 
-  const subscription = await prisma.subscription.findUnique({
-    where: { id },
-    include: {
-      customer: {
-        select: { id: true, name: true, email: true, phone: true, company: true, address: true, gstin: true, userId: true },
-      },
-      plan: {
-        select: {
-          id: true,
-          name: true,
-          price: true,
-          billingPeriod: true,
-          closable: true,
-          pausable: true,
-          renewable: true,
-          autoClose: true,
-        },
-      },
-      paymentTerm: { select: { id: true, name: true, dueDays: true } },
-      discount: { select: { id: true, name: true, type: true, value: true } },
-      lines: {
-        include: {
-          product: { select: { id: true, name: true, type: true } },
-          taxes: { select: { id: true, name: true, rate: true } },
-        },
-      },
-      invoices: {
-        orderBy: { invoiceDate: 'desc' },
-        select: {
-          id: true,
-          number: true,
-          status: true,
-          invoiceDate: true,
-          dueDate: true,
-          amountTotal: true,
-          amountPaid: true,
-        },
-      },
-      history: {
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      },
-    },
-  });
+  const subscription = await fetchFull(id);
 
   if (!subscription) throw httpError(404, 'Subscription not found');
 
