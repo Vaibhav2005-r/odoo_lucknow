@@ -101,3 +101,75 @@ test('Customer outstanding balance calculation aggregates confirmed unpaid invoi
   assert.equal(rounded, 1750.25);
 });
 
+test('Quotation acceptance validation and state transition logic', () => {
+  const evaluateAcceptance = (sub, asOfDate) => {
+    if (sub.status !== 'QUOTATION' && sub.status !== 'DRAFT') {
+      return { allowed: false, message: `Cannot accept subscription in ${sub.status} status` };
+    }
+    if (sub.quoteValidUntil && new Date(sub.quoteValidUntil) < asOfDate) {
+      return { allowed: false, message: 'This quotation has expired' };
+    }
+    return { allowed: true, newStatus: 'CONFIRMED' };
+  };
+
+  const today = new Date('2026-10-31T00:00:00.000Z');
+
+  // Valid active quotation
+  const validQuote = {
+    id: 1,
+    status: 'QUOTATION',
+    quoteValidUntil: '2026-11-15T00:00:00.000Z',
+  };
+  assert.deepEqual(evaluateAcceptance(validQuote, today), { allowed: true, newStatus: 'CONFIRMED' });
+
+  // Expired quotation
+  const expiredQuote = {
+    id: 2,
+    status: 'QUOTATION',
+    quoteValidUntil: '2026-10-15T00:00:00.000Z',
+  };
+  assert.deepEqual(evaluateAcceptance(expiredQuote, today), {
+    allowed: false,
+    message: 'This quotation has expired',
+  });
+
+  // Already active subscription cannot be accepted again
+  const activeSub = {
+    id: 3,
+    status: 'ACTIVE',
+    quoteValidUntil: null,
+  };
+  assert.deepEqual(evaluateAcceptance(activeSub, today), {
+    allowed: false,
+    message: 'Cannot accept subscription in ACTIVE status',
+  });
+});
+
+test('Customer portal subscription query builder enforces customer isolation', () => {
+  const buildSubscriptionWhere = (user, query) => {
+    const where = {};
+    if (user.role === 'CUSTOMER') {
+      where.customerId = user.customerId;
+    } else if (query?.customerId) {
+      where.customerId = Number(query.customerId);
+    }
+    if (query?.status) where.status = query.status;
+    return where;
+  };
+
+  const customerUser = { role: 'CUSTOMER', customerId: 55 };
+  const adminUser = { role: 'ADMIN', customerId: null };
+
+  // Customer query strictly enforces customerId
+  const custWhere = buildSubscriptionWhere(customerUser, { status: 'QUOTATION' });
+  assert.equal(custWhere.customerId, 55);
+  assert.equal(custWhere.status, 'QUOTATION');
+
+  // Customer cannot tamper customerId by passing query param
+  const tamperedWhere = buildSubscriptionWhere(customerUser, { customerId: '999' });
+  assert.equal(tamperedWhere.customerId, 55);
+
+  // Admin query can filter any customer or none
+  const adminWhere = buildSubscriptionWhere(adminUser, { customerId: '999' });
+  assert.equal(adminWhere.customerId, 999);
+});

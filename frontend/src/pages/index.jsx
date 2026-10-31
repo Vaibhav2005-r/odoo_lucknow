@@ -11,7 +11,7 @@ export { default as CustomerList } from './customers/CustomerList';
 export { default as CustomerDetail } from './customers/CustomerDetail';
 export { default as Taxes } from './config/Taxes';
 export { default as PaymentTerms } from './config/PaymentTerms';
-export const MySubscriptions = placeholder('My subscriptions');  // A
+export { default as MySubscriptions } from './portal/MySubscriptions';
 export const PortalSubscription = placeholder('Subscription');   // A
 export const MyInvoices = placeholder('My invoices');            // A
 export const PortalInvoice = placeholder('Invoice');             // A
