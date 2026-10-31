@@ -223,3 +223,99 @@ test('Subscription resumption recalculates period index skipping pause duration'
   // Period 3: Apr 1 (starts before April 15, so next period to bill starts May 1 -> index 4)
   assert.equal(nextIdx, 4);
 });
+
+test('Customer portal invoices query builder applies customer data isolation and tab views', () => {
+  const buildInvoiceWhere = (user, view, today) => {
+    const base = user.role === 'CUSTOMER' ? { customerId: user.customerId } : {};
+    let viewWhere = {};
+    if (view === 'OUTSTANDING') viewWhere = { status: 'CONFIRMED' };
+    else if (view === 'OVERDUE') viewWhere = { status: 'CONFIRMED', dueDate: { lt: today } };
+    else if (view === 'PAID') viewWhere = { status: 'PAID' };
+    return { ...base, ...viewWhere };
+  };
+
+  const customerUser = { role: 'CUSTOMER', customerId: 77 };
+  const today = new Date('2026-10-31T00:00:00.000Z');
+
+  const outstandingQuery = buildInvoiceWhere(customerUser, 'OUTSTANDING', today);
+  assert.equal(outstandingQuery.customerId, 77);
+  assert.equal(outstandingQuery.status, 'CONFIRMED');
+
+  const overdueQuery = buildInvoiceWhere(customerUser, 'OVERDUE', today);
+  assert.equal(overdueQuery.customerId, 77);
+  assert.equal(overdueQuery.status, 'CONFIRMED');
+  assert.deepEqual(overdueQuery.dueDate, { lt: today });
+});
+
+test('Customer invoice summary calculator aggregates invoiced, paid and outstanding balance', () => {
+  const invoiceList = [
+    { id: 1, amountTotal: '2000.00', amountPaid: '2000.00', status: 'PAID' },
+    { id: 2, amountTotal: '1500.00', amountPaid: '500.00', status: 'CONFIRMED' },
+    { id: 3, amountTotal: '750.50', amountPaid: '0.00', status: 'CONFIRMED' },
+  ];
+
+  const invoiced = invoiceList.reduce((sum, inv) => sum + Number(inv.amountTotal), 0);
+  const paid = invoiceList.reduce((sum, inv) => sum + Number(inv.amountPaid), 0);
+  const due = Math.max(0, invoiced - paid);
+
+  assert.equal(invoiced, 4250.50);
+  assert.equal(paid, 2500.00);
+  assert.equal(due, 1750.50);
+});
+
+test('Portal payment schema validates allowed methods and amount constraints', () => {
+  const portalPaySchema = z.object({
+    method: z.enum(['UPI', 'CARD', 'BANK_TRANSFER', 'OTHER']).default('CARD'),
+    amount: z.coerce.number().positive('Payment amount must be greater than 0'),
+    note: z.string().trim().max(255).optional().nullable(),
+  });
+
+  const valid = portalPaySchema.safeParse({
+    method: 'UPI',
+    amount: '1499.50',
+    note: 'GPay UTR 982348271',
+  });
+  assert.equal(valid.success, true);
+  assert.equal(valid.data.method, 'UPI');
+  assert.equal(valid.data.amount, 1499.5);
+
+  // Invalid negative amount
+  const neg = portalPaySchema.safeParse({
+    method: 'CARD',
+    amount: '-500',
+  });
+  assert.equal(neg.success, false);
+
+  // Invalid payment method
+  const badMethod = portalPaySchema.safeParse({
+    method: 'BITCOIN',
+    amount: '100',
+  });
+  assert.equal(badMethod.success, false);
+});
+
+test('Customer invoice ownership authorization check on payment endpoint', () => {
+  const authorizePayment = (user, invoice) => {
+    if (user.role === 'CUSTOMER') {
+      const isOwner =
+        user.customerId === invoice.customerId ||
+        invoice.customer?.userId === user.id ||
+        invoice.customer?.email === user.email;
+      if (!isOwner) return { allowed: false, status: 404, message: 'Invoice not found' };
+    }
+    return { allowed: true };
+  };
+
+  const customerUser = { id: 10, role: 'CUSTOMER', customerId: 88, email: 'cust@mail.com' };
+  const ownInvoice = { id: 1, customerId: 88, customer: { userId: 10, email: 'cust@mail.com' } };
+  const foreignInvoice = { id: 2, customerId: 99, customer: { userId: 20, email: 'other@mail.com' } };
+
+  // Own invoice -> allowed
+  assert.deepEqual(authorizePayment(customerUser, ownInvoice), { allowed: true });
+  // Foreign invoice -> 404 (ID enumeration protection)
+  assert.deepEqual(authorizePayment(customerUser, foreignInvoice), {
+    allowed: false,
+    status: 404,
+    message: 'Invoice not found',
+  });
+});

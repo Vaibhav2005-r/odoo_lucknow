@@ -155,7 +155,7 @@ router.post('/:id/cancel', requireRole('ADMIN', 'STAFF'), async (req, res) => {
   res.json({ message: 'Invoice cancelled', invoice: cancelled });
 });
 
-// POST /api/invoices/:id/payments - Record a payment against an invoice
+// POST /api/invoices/:id/payments - Record a payment against an invoice (Staff / Admin)
 const paymentSchema = z.object({
   method: z.enum(['CASH', 'BANK_TRANSFER', 'UPI', 'CARD', 'CHEQUE', 'OTHER']),
   amount: z.coerce.number().positive('Payment amount must be greater than 0'),
@@ -167,6 +167,48 @@ router.post('/:id/payments', requireRole('ADMIN', 'STAFF'), validate(paymentSche
   const invoiceId = paramId(req);
   const payment = await recordPayment(invoiceId, req.body, req.user.id);
   res.status(201).json(payment);
+});
+
+// POST /api/invoices/:id/pay - Customer pays own confirmed invoice via portal
+const portalPaySchema = z.object({
+  method: z.enum(['UPI', 'CARD', 'BANK_TRANSFER', 'OTHER']).default('CARD'),
+  amount: z.coerce.number().positive('Payment amount must be greater than 0'),
+  note: z.string().trim().max(255).optional().nullable(),
+});
+
+router.post('/:id/pay', validate(portalPaySchema), async (req, res) => {
+  const invoiceId = paramId(req);
+  const inv = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    select: {
+      id: true,
+      customerId: true,
+      status: true,
+      customer: { select: { userId: true, email: true } },
+    },
+  });
+
+  if (!inv) throw httpError(404, 'Invoice not found');
+
+  // Customer role ownership check
+  if (req.user.role === 'CUSTOMER') {
+    const isOwner =
+      req.user.customerId === inv.customerId ||
+      inv.customer?.userId === req.user.id ||
+      inv.customer?.email === req.user.email;
+    if (!isOwner) throw httpError(404, 'Invoice not found');
+  }
+
+  const today = todayIn(env.APP_TZ);
+  const paymentPayload = {
+    method: req.body.method,
+    amount: req.body.amount,
+    paymentDate: today.toISOString().slice(0, 10),
+    note: req.body.note || `Customer online payment via Portal (${req.body.method})`,
+  };
+
+  const payment = await recordPayment(invoiceId, paymentPayload, req.user.id);
+  res.status(201).json({ payment, message: 'Payment recorded successfully' });
 });
 
 // POST /api/invoices/:id/send - Send invoice email to customer

@@ -13,8 +13,8 @@ export { default as Taxes } from './config/Taxes';
 export { default as PaymentTerms } from './config/PaymentTerms';
 export { default as MySubscriptions } from './portal/MySubscriptions';
 export { default as PortalSubscription } from './portal/PortalSubscription';
-export const MyInvoices = placeholder('My invoices');            // A
-export const PortalInvoice = placeholder('Invoice');             // A
+export { default as MyInvoices } from './portal/MyInvoices';
+export { default as PortalInvoice } from './portal/PortalInvoice';
 export { default as Profile } from './portal/Profile';
 export const ProductList = placeholder('Products');              // B
 export const ProductForm = placeholder('Product');               // B
