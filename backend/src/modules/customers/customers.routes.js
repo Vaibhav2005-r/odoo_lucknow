@@ -170,6 +170,71 @@ router.patch('/me', validate(updateCustomerSchema), async (req, res) => {
   res.json({ data: updated });
 });
 
+// GET /api/customers/portal-summary - Real-time badge indicators for portal header & dashboard
+router.get('/portal-summary', async (req, res) => {
+  let customerId = req.user.customerId;
+  if (!customerId) {
+    const customer = await prisma.customer.findFirst({
+      where: {
+        OR: [
+          { userId: req.user.id },
+          { email: req.user.email },
+        ],
+      },
+      select: { id: true },
+    });
+    if (customer) customerId = customer.id;
+  }
+
+  if (!customerId) {
+    return res.json({
+      data: {
+        pendingQuotations: 0,
+        activeSubscriptions: 0,
+        unpaidInvoices: 0,
+        paidInvoices: 0,
+        outstandingAmount: 0,
+        currency: 'INR',
+      },
+    });
+  }
+
+  const [pendingQuotations, activeSubscriptions, unpaidInvoices, paidInvoices, outstandingInvoices] = await prisma.$transaction([
+    prisma.subscription.count({
+      where: { customerId, status: 'QUOTATION' },
+    }),
+    prisma.subscription.count({
+      where: { customerId, status: { in: ['ACTIVE', 'CONFIRMED'] } },
+    }),
+    prisma.invoice.count({
+      where: { customerId, status: 'CONFIRMED' },
+    }),
+    prisma.invoice.count({
+      where: { customerId, status: 'PAID' },
+    }),
+    prisma.invoice.findMany({
+      where: { customerId, status: 'CONFIRMED' },
+      select: { amountTotal: true, amountPaid: true },
+    }),
+  ]);
+
+  const outstanding = outstandingInvoices.reduce(
+    (sum, inv) => sum + (Number(inv.amountTotal) - Number(inv.amountPaid)),
+    0
+  );
+
+  res.json({
+    data: {
+      pendingQuotations,
+      activeSubscriptions,
+      unpaidInvoices,
+      paidInvoices,
+      outstandingAmount: Math.max(0, Math.round(outstanding * 100) / 100),
+      currency: 'INR',
+    },
+  });
+});
+
 // GET /api/customers/:id - Admin/Staff or Customer viewing own profile
 router.get('/:id', async (req, res) => {
   const id = paramId(req);

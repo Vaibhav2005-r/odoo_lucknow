@@ -38,6 +38,17 @@ const resetSchema = z.object({
   confirmPassword: z.string(),
 }).refine(matching, mismatch);
 
+const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: password,
+    confirmPassword: z.string(),
+  })
+  .refine((d) => d.newPassword === d.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
+
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const publicUser = (u) => ({
   id: u.id,
@@ -98,6 +109,29 @@ router.get('/me', requireAuth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { customer: true } });
   if (!user || !user.isActive) throw httpError(401, 'Please log in again');
   res.json(publicUser(user));
+});
+
+router.post('/change-password', requireAuth, validate(changePasswordSchema), async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user || !user.isActive) throw httpError(401, 'Please log in again');
+
+  const matches = await bcrypt.compare(req.body.currentPassword, user.passwordHash);
+  if (!matches) {
+    throw httpError(400, 'Current password is incorrect');
+  }
+
+  const isSame = await bcrypt.compare(req.body.newPassword, user.passwordHash);
+  if (isSame) {
+    throw httpError(400, 'New password cannot be the same as your current password');
+  }
+
+  const passwordHash = await bcrypt.hash(req.body.newPassword, 10);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash },
+  });
+
+  res.json({ message: 'Password updated successfully' });
 });
 
 router.post('/forgot-password', validate(forgotSchema), async (req, res) => {

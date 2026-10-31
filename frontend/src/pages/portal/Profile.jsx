@@ -15,6 +15,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
+  Lock,
+  Eye,
+  EyeOff,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -26,11 +30,20 @@ export default function Profile() {
   const [resettingPassword, setResettingPassword] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
-  // Form inputs
+  // Form inputs for profile
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [company, setCompany] = useState('');
   const [address, setAddress] = useState('');
+
+  // Form inputs for direct password update
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const fetchProfile = async () => {
     try {
@@ -75,6 +88,47 @@ export default function Profile() {
       toast.error(err.message || 'Failed to update profile');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (!currentPassword) {
+      toast.error('Current password is required');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 9) {
+      toast.error('Password must be longer than 8 characters');
+      return;
+    }
+
+    // PDF rule: >8 chars, at least 1 uppercase, 1 lowercase, 1 special character
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[^a-zA-Z0-9]).{9,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      toast.error('Password must contain uppercase, lowercase, and special characters');
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      await api.post('/auth/change-password', {
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
+      toast.success('Password changed successfully!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowPasswordForm(false);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update password');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -274,37 +328,144 @@ export default function Profile() {
           <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-6">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
               <ShieldCheck className="w-5 h-5 text-emerald-600" />
-              <h2 className="text-base font-semibold text-slate-900">Security & Access</h2>
+              <h2 className="text-base font-semibold text-slate-900">Security & Credentials</h2>
             </div>
 
             <div className="space-y-4">
               <div className="text-xs text-slate-600">
-                Your account is protected with encrypted authentication tokens and strict role-based data isolation.
+                Manage your portal password and account security settings.
               </div>
 
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
-                <div className="font-semibold text-slate-800">Password Management</div>
-                <div>Need to update your password? You can request a secure reset link sent to your registered email.</div>
-              </div>
-
-              {resetSent ? (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <div>
-                    A password reset link has been dispatched to <strong>{profile?.email || user?.email}</strong>. Check your inbox and spam folder.
-                  </div>
-                </div>
-              ) : (
+              {/* Direct Change Password Toggle/Form */}
+              {!showPasswordForm ? (
                 <button
                   type="button"
-                  onClick={handleRequestPasswordReset}
-                  disabled={resettingPassword}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer disabled:opacity-60"
+                  onClick={() => setShowPasswordForm(true)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-50 border border-brand-200 text-brand-700 text-xs font-semibold rounded-lg hover:bg-brand-100 transition-colors cursor-pointer"
                 >
-                  <KeyRound className="w-4 h-4 text-slate-500" />
-                  {resettingPassword ? 'Sending reset link...' : 'Send Password Reset Link'}
+                  <Lock className="w-4 h-4 text-brand-600" />
+                  Change Password Directly
                 </button>
+              ) : (
+                <form onSubmit={handleChangePassword} className="space-y-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-xs font-bold text-slate-800">Change Password</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordForm(false)}
+                      className="text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      Current Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showCurrent ? 'text' : 'password'}
+                        required
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="w-full pr-8 pl-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-hidden focus:ring-1 focus:ring-brand-500"
+                        placeholder="Current password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrent(!showCurrent)}
+                        className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      >
+                        {showCurrent ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      New Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNew ? 'text' : 'password'}
+                        required
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full pr-8 pl-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-hidden focus:ring-1 focus:ring-brand-500"
+                        placeholder="New password (>8 chars)"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNew(!showNew)}
+                        className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      >
+                        {showNew ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type={showNew ? 'text' : 'password'}
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-hidden focus:ring-1 focus:ring-brand-500"
+                      placeholder="Confirm new password"
+                    />
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    Must be &gt;8 chars and contain uppercase, lowercase, and special characters.
+                  </p>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={changingPassword}
+                      className="flex-1 px-3 py-1.5 bg-brand-600 text-white text-xs font-semibold rounded-md hover:bg-brand-700 disabled:opacity-60 cursor-pointer"
+                    >
+                      {changingPassword ? 'Updating...' : 'Update Password'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordForm(false)}
+                      className="px-2 py-1.5 border border-slate-300 text-slate-600 text-xs rounded-md hover:bg-slate-100 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
               )}
+
+              {/* Email reset fallback */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="text-[11px] text-slate-500 mb-2">
+                  Forgot your password or locked out? Request a reset link via email.
+                </div>
+                {resetSent ? (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      Reset link sent to <strong>{profile?.email || user?.email}</strong>.
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleRequestPasswordReset}
+                    disabled={resettingPassword}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer disabled:opacity-60"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                    {resettingPassword ? 'Sending reset link...' : 'Send Password Reset Link'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -327,4 +488,3 @@ export default function Profile() {
     </div>
   );
 }
-

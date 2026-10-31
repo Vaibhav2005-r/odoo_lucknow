@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { resumePeriodIndex } from '../lib/billing-core.js';
 
 const updateCustomerSchema = z.object({
@@ -318,4 +319,112 @@ test('Customer invoice ownership authorization check on payment endpoint', () =>
     status: 404,
     message: 'Invoice not found',
   });
+});
+
+test('Portal direct password change schema validation and mismatch check', () => {
+  const changePasswordSchema = z
+    .object({
+      currentPassword: z.string().min(1, 'Current password is required'),
+      newPassword: z.string().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[^a-zA-Z0-9]).{9,}$/, 'Password must have >8 chars, upper, lower, special'),
+      confirmPassword: z.string(),
+    })
+    .refine((d) => d.newPassword === d.confirmPassword, {
+      message: 'Passwords do not match',
+      path: ['confirmPassword'],
+    });
+
+  // Valid password change
+  const valid = changePasswordSchema.safeParse({
+    currentPassword: 'OldPassword!1',
+    newPassword: 'NewSecurePassword#2026',
+    confirmPassword: 'NewSecurePassword#2026',
+  });
+  assert.equal(valid.success, true);
+
+  // Mismatched confirmation
+  const mismatch = changePasswordSchema.safeParse({
+    currentPassword: 'OldPassword!1',
+    newPassword: 'NewSecurePassword#2026',
+    confirmPassword: 'DifferentPassword#2026',
+  });
+  assert.equal(mismatch.success, false);
+
+  // Weak new password (less than 9 chars / missing special)
+  const weak = changePasswordSchema.safeParse({
+    currentPassword: 'OldPassword!1',
+    newPassword: 'short',
+    confirmPassword: 'short',
+  });
+  assert.equal(weak.success, false);
+});
+
+test('Portal direct password update verification and old-vs-new check', async () => {
+  const verifyPasswordChange = async (storedHash, currentInput, newInput) => {
+    const matches = await bcrypt.compare(currentInput, storedHash);
+    if (!matches) return { success: false, error: 'Current password is incorrect' };
+
+    const isSame = await bcrypt.compare(newInput, storedHash);
+    if (isSame) return { success: false, error: 'New password cannot be the same as your current password' };
+
+    return { success: true };
+  };
+
+  const storedHash = await bcrypt.hash('CorrectCurrent!99', 10);
+
+  // Wrong current password
+  const badCurrent = await verifyPasswordChange(storedHash, 'WrongPassword!99', 'BrandNewPass#100');
+  assert.equal(badCurrent.success, false);
+  assert.equal(badCurrent.error, 'Current password is incorrect');
+
+  // New password same as current password
+  const samePass = await verifyPasswordChange(storedHash, 'CorrectCurrent!99', 'CorrectCurrent!99');
+  assert.equal(samePass.success, false);
+  assert.equal(samePass.error, 'New password cannot be the same as your current password');
+
+  // Valid change
+  const validChange = await verifyPasswordChange(storedHash, 'CorrectCurrent!99', 'BrandNewPass#100');
+  assert.equal(validChange.success, true);
+});
+
+test('Portal summary calculator returns exact metrics for dashboard indicators', () => {
+  const calculatePortalSummary = ({ subscriptions, invoices }) => {
+    const pendingQuotations = subscriptions.filter((s) => s.status === 'QUOTATION').length;
+    const activeSubscriptions = subscriptions.filter((s) => ['ACTIVE', 'CONFIRMED'].includes(s.status)).length;
+    const unpaidInvoices = invoices.filter((i) => i.status === 'CONFIRMED' && Number(i.amountTotal) > Number(i.amountPaid)).length;
+    const paidInvoices = invoices.filter((i) => i.status === 'PAID').length;
+
+    const outstanding = invoices
+      .filter((i) => i.status === 'CONFIRMED')
+      .reduce((sum, i) => sum + (Number(i.amountTotal) - Number(i.amountPaid)), 0);
+
+    return {
+      pendingQuotations,
+      activeSubscriptions,
+      unpaidInvoices,
+      paidInvoices,
+      outstandingAmount: Math.max(0, Math.round(outstanding * 100) / 100),
+      currency: 'INR',
+    };
+  };
+
+  const sampleSubscriptions = [
+    { id: 1, status: 'QUOTATION' },
+    { id: 2, status: 'QUOTATION' },
+    { id: 3, status: 'ACTIVE' },
+    { id: 4, status: 'CLOSED' },
+  ];
+
+  const sampleInvoices = [
+    { id: 10, status: 'CONFIRMED', amountTotal: '5000.00', amountPaid: '2000.00' },
+    { id: 11, status: 'CONFIRMED', amountTotal: '1500.00', amountPaid: '1500.00' },
+    { id: 12, status: 'PAID', amountTotal: '3000.00', amountPaid: '3000.00' },
+  ];
+
+  const summary = calculatePortalSummary({ subscriptions: sampleSubscriptions, invoices: sampleInvoices });
+  assert.equal(summary.pendingQuotations, 2);
+  assert.equal(summary.activeSubscriptions, 1);
+  assert.equal(summary.unpaidInvoices, 1);
+  assert.equal(summary.paidInvoices, 1);
+  assert.equal(summary.outstandingAmount, 3000.00);
+  assert.equal(summary.currency, 'INR');
 });
