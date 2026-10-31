@@ -812,8 +812,8 @@ export default function Templates() {
                 </div>
               </div>
 
-              {/* Modal Actions */}
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
+              {/* Modal Actions: stays visible while the form scrolls */}
+              <div className="sticky -bottom-6 -mx-6 -mb-6 px-6 py-4 bg-white/90 backdrop-blur-xl border-t border-slate-200 flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}

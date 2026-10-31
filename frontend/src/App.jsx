@@ -15,7 +15,25 @@ export default function App() {
     <QueryClientProvider client={qc}>
       <AuthProvider>
         <BrowserRouter>
-          <Toaster position="top-right" />
+          <Toaster
+            position="top-center"
+            toastOptions={{
+              duration: 3500,
+              style: {
+                background: 'rgba(29, 29, 31, 0.9)',
+                color: '#fff',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                borderRadius: '999px',
+                padding: '10px 18px',
+                fontSize: '14px',
+                fontWeight: 500,
+                boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
+              },
+              success: { iconTheme: { primary: '#34c759', secondary: '#fff' } },
+              error: { iconTheme: { primary: '#ff453a', secondary: '#fff' } },
+            }}
+          />
           <Routes>
             <Route path="/login" element={<P.Login />} />
             <Route path="/signup" element={<P.Signup />} />

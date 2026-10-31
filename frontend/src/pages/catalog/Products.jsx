@@ -10,11 +10,9 @@ import {
   XCircle,
   Tag,
   Layers,
-  Image as ImageIcon,
   Check,
   X,
   AlertCircle,
-  UploadCloud,
   ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -179,23 +177,6 @@ export default function Products() {
     if (editingVariantIndex === index) {
       setEditingVariantIndex(null);
       setVariantInput({ attribute: '', value: '', extraPrice: '' });
-    }
-  };
-
-  // Image Upload / Preview Handler
-  const handleImageFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error('Image size must be under 2MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData((prev) => ({ ...prev, imageUrl: reader.result }));
-        toast.success('Product image uploaded');
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -549,7 +530,7 @@ export default function Products() {
                   {editingProduct ? 'Edit Catalog Product' : 'Add New Catalog Product'}
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Configure pricing, SKU codes, tax categorization, and variant options.
+                  Configure pricing, tax and variant options.
                 </p>
               </div>
               <button
@@ -573,17 +554,6 @@ export default function Products() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g. Enterprise Cloud ERP Suite"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Product Code / SKU</label>
-                  <input
-                    type="text"
-                    value={formData.sku}
-                    onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                    placeholder="e.g. PRD-ERP-001"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
                 </div>
 
@@ -666,59 +636,6 @@ export default function Products() {
                     placeholder="Detailed specifications, features, or internal provisioning instructions..."
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
-                </div>
-              </div>
-
-              {/* Product Image Section */}
-              <div className="border-t border-slate-200 pt-4">
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Product Image Preview (Frontend Only)
-                </label>
-                <div className="flex items-start gap-4">
-                  {formData.imageUrl ? (
-                    <div className="relative group shrink-0">
-                      <img
-                        src={formData.imageUrl}
-                        alt="Product Preview"
-                        className="h-20 w-20 rounded-xl object-cover border border-slate-200 shadow-xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, imageUrl: '' })}
-                        className="absolute -top-2 -right-2 bg-rose-600 text-white rounded-full p-1 shadow-sm hover:bg-rose-700 transition"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="h-20 w-20 rounded-xl bg-slate-50 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 shrink-0">
-                      <ImageIcon className="h-6 w-6" />
-                      <span className="text-[10px] mt-1">No Image</span>
-                    </div>
-                  )}
-
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 transition shadow-xs">
-                        <UploadCloud className="h-3.5 w-3.5 text-slate-500" />
-                        <span>Upload File</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageFileChange}
-                          className="hidden"
-                        />
-                      </label>
-                      <span className="text-xs text-slate-400">or enter image URL below</span>
-                    </div>
-                    <input
-                      type="url"
-                      value={formData.imageUrl}
-                      onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                      placeholder="https://example.com/images/product.jpg"
-                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                  </div>
                 </div>
               </div>
 
@@ -854,7 +771,7 @@ export default function Products() {
               </div>
 
               {/* Modal Footer Actions */}
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
+              <div className="sticky -bottom-6 -mx-6 -mb-6 px-6 py-4 bg-white/90 backdrop-blur-xl border-t border-slate-200 flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
