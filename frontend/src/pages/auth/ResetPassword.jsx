@@ -3,6 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { Check, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import AuthShell from '../../components/auth/AuthShell';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -13,6 +14,7 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [cover, setCover] = useState(false);
 
   const checks = [
     { label: 'More than 8 characters', valid: password.length > 8 },
@@ -56,15 +58,7 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-        <div className="text-center mb-6">
-          <div className="inline-flex h-12 w-12 rounded-xl bg-brand-600 text-white font-bold text-xl items-center justify-center mb-3">
-            LB
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">Set new password</h1>
-          <p className="text-sm text-slate-500 mt-1">Choose a secure password for your account</p>
-        </div>
+    <AuthShell title="Set new password" subtitle="Choose a secure password for your account" mood={done || (allChecksPass && passwordsMatch) ? 'happy' : cover ? 'cover' : 'idle'}>
 
         {done ? (
           <div className="space-y-4">
@@ -93,6 +87,8 @@ export default function ResetPassword() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                onFocus={() => setCover(true)}
+                onBlur={() => setCover(false)}
                 placeholder="•••••••••"
                 className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
               />
@@ -124,6 +120,8 @@ export default function ResetPassword() {
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
+                onFocus={() => setCover(true)}
+                onBlur={() => setCover(false)}
                 placeholder="•••••••••"
                 className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
               />
@@ -147,7 +145,6 @@ export default function ResetPassword() {
             </div>
           </form>
         )}
-      </div>
-    </div>
+    </AuthShell>
   );
 }

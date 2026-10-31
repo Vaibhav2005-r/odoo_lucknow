@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import toast from 'react-hot-toast';
+import AuthShell from '../../components/auth/AuthShell';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -23,17 +24,7 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-        <div className="text-center mb-6">
-          <div className="inline-flex h-12 w-12 rounded-xl bg-brand-600 text-white font-bold text-xl items-center justify-center mb-3">
-            LB
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">Reset your password</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Enter your email address and we'll send you a password reset link.
-          </p>
-        </div>
+    <AuthShell title="Reset your password" subtitle="Enter your email address and we'll send you a password reset link." mood={submitted ? 'happy' : 'idle'}>
 
         {submitted ? (
           <div className="space-y-4">
@@ -87,7 +78,6 @@ export default function ForgotPassword() {
             </div>
           </form>
         )}
-      </div>
-    </div>
+    </AuthShell>
   );
 }

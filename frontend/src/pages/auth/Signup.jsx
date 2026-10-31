@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { Check, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import AuthShell from '../../components/auth/AuthShell';
 
 export default function Signup() {
   const { setUser } = useAuth();
@@ -13,6 +14,7 @@ export default function Signup() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [cover, setCover] = useState(false);
 
   const checks = [
     { label: 'More than 8 characters', valid: password.length > 8 },
@@ -54,15 +56,7 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-        <div className="text-center mb-6">
-          <div className="inline-flex h-12 w-12 rounded-xl bg-brand-600 text-white font-bold text-xl items-center justify-center mb-3">
-            LB
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">Create your account</h1>
-          <p className="text-sm text-slate-500 mt-1">Get started with Brightloop Customer Portal</p>
-        </div>
+    <AuthShell title="Create your account" subtitle="Get started with Brightloop Customer Portal" mood={allChecksPass && passwordsMatch ? 'happy' : cover ? 'cover' : 'idle'} footer={<>Already have an account?{' '}<Link to="/login" className="font-semibold text-brand-600 hover:text-brand-700">Sign in</Link></>}>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -96,6 +90,8 @@ export default function Signup() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onFocus={() => setCover(true)}
+              onBlur={() => setCover(false)}
               placeholder="•••••••••"
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
             />
@@ -127,6 +123,8 @@ export default function Signup() {
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              onFocus={() => setCover(true)}
+              onBlur={() => setCover(false)}
               placeholder="•••••••••"
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
             />
@@ -143,14 +141,6 @@ export default function Signup() {
             {loading ? 'Creating account...' : 'Create account'}
           </button>
         </form>
-
-        <div className="mt-6 text-center text-sm text-slate-600">
-          Already have an account?{' '}
-          <Link to="/login" className="text-brand-600 hover:text-brand-700 font-medium">
-            Sign in
-          </Link>
-        </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }
