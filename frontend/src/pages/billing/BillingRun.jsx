@@ -15,6 +15,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import RemindersCard from '../../components/RemindersCard';
 
 export default function BillingRun() {
   const queryClient = useQueryClient();
@@ -239,6 +240,8 @@ export default function BillingRun() {
           </div>
         </div>
       </div>
+
+      <RemindersCard />
     </div>
   );
 }

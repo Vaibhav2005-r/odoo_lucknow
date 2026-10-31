@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import GstFields from '../../components/GstFields';
 import { Plus, Search, Users, ExternalLink, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -19,6 +20,7 @@ export default function CustomerList() {
   const [company, setCompany] = useState('');
   const [address, setAddress] = useState('');
   const [gstin, setGstin] = useState('');
+  const [stateCode, setStateCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const fetchCustomers = async () => {
@@ -54,6 +56,7 @@ export default function CustomerList() {
         company: company || null,
         address: address || null,
         gstin: gstin || null,
+        stateCode: stateCode || null,
       });
       toast.success(`Customer '${name}' created successfully!`);
       setShowModal(false);
@@ -63,6 +66,7 @@ export default function CustomerList() {
       setCompany('');
       setAddress('');
       setGstin('');
+      setStateCode('');
       fetchCustomers();
     } catch (err) {
       toast.error(err.message || 'Failed to create customer');
@@ -268,16 +272,7 @@ export default function CustomerList() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">GSTIN</label>
-                <input
-                  type="text"
-                  value={gstin}
-                  onChange={(e) => setGstin(e.target.value)}
-                  placeholder="27AAAAA0000A1Z5"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 uppercase"
-                />
-              </div>
+              <GstFields gstin={gstin} setGstin={setGstin} stateCode={stateCode} setStateCode={setStateCode} />
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Address</label>

@@ -2,8 +2,10 @@ import { prisma } from '../../lib/prisma.js';
 import { httpError } from '../../lib/http-error.js';
 import { parseDate, toPaise, toRupees } from '../../lib/billing-core.js';
 
-export async function recordPayment(invoiceId, input, userId) {
-  return prisma.$transaction(async (tx) => {
+// Pass `outerTx` to make the payment part of the caller's transaction (online checkout settles the
+// payment intent and records the payment atomically).
+export async function recordPayment(invoiceId, input, userId, outerTx = null) {
+  const run = async (tx) => {
     // Lock the invoice row so two payments can't over-pay it.
     const [inv] = await tx.$queryRaw`SELECT id, status::text AS status, "customerId", "amountTotal", "amountPaid"
                                      FROM "Invoice" WHERE id = ${invoiceId} FOR UPDATE`;
@@ -42,7 +44,8 @@ export async function recordPayment(invoiceId, input, userId) {
     });
 
     return payment;
-  });
+  };
+  return outerTx ? run(outerTx) : prisma.$transaction(run);
 }
 
 // FIFO allocation of a lump-sum payment across customer's confirmed unpaid invoices

@@ -17,6 +17,7 @@ export default function Taxes() {
   const [name, setName] = useState('');
   const [rate, setRate] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [kind, setKind] = useState('GST');
   const [submitting, setSubmitting] = useState(false);
 
   const fetchTaxes = async () => {
@@ -40,6 +41,7 @@ export default function Taxes() {
     setName('');
     setRate('');
     setIsActive(true);
+    setKind('GST');
     setModalOpen(true);
   };
 
@@ -48,6 +50,7 @@ export default function Taxes() {
     setName(tax.name);
     setRate(String(tax.rate));
     setIsActive(tax.isActive);
+    setKind(tax.kind || 'GST');
     setModalOpen(true);
   };
 
@@ -65,6 +68,7 @@ export default function Taxes() {
         await api.patch(`/taxes/${editingTax.id}`, {
           name,
           rate: numRate,
+          kind,
           isActive,
         });
         toast.success(`Tax rate ${name} updated successfully!`);
@@ -72,6 +76,7 @@ export default function Taxes() {
         await api.post('/taxes', {
           name,
           rate: numRate,
+          kind,
           isActive,
         });
         toast.success(`Tax rate ${name} created successfully!`);
@@ -139,7 +144,12 @@ export default function Taxes() {
                       <Percent className="h-4 w-4 text-brand-600" />
                       <span>{t.name}</span>
                     </td>
-                    <td className="py-3.5 px-4 font-semibold text-slate-800">{Number(t.rate)}%</td>
+                    <td className="py-3.5 px-4 font-semibold text-slate-800">
+                      {Number(t.rate)}%
+                      <span className="ml-2 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                        {t.kind === 'OTHER' ? 'Other' : 'GST'}
+                      </span>
+                    </td>
                     <td className="py-3.5 px-4 text-slate-600">
                       {t._count?.products || 0} product(s)
                     </td>
@@ -240,6 +250,18 @@ export default function Taxes() {
                   />
                   <span className="absolute right-3 top-2.5 text-slate-400 text-sm">%</span>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Type</label>
+                <select
+                  value={kind}
+                  onChange={(e) => setKind(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="GST">GST: shown as CGST + SGST (same state) or IGST (other state)</option>
+                  <option value="OTHER">Other tax (cess, VAT ...): charged as it is</option>
+                </select>
               </div>
 
               <div className="flex items-center gap-2 pt-1">

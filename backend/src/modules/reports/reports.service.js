@@ -202,3 +202,54 @@ export async function getCustomerStatement(customerId) {
     ledger: transactions,
   };
 }
+
+// ---------- GST summary (what has to be reported to the tax office) ----------
+
+const num = (v) => Number(v ?? 0);
+const r2 = (v) => Math.round(num(v) * 100) / 100;
+
+/**
+ * Tax collected on invoices that are confirmed or paid (drafts and cancelled invoices are not tax events),
+ * by month and by rate. `unsplit` is tax on older invoices that were issued before CGST/SGST/IGST were recorded.
+ */
+export async function getGstSummary({ from, to }) {
+  const months = await prisma.$queryRaw`
+    SELECT to_char("invoiceDate", 'YYYY-MM') AS month,
+           COUNT(*)::int AS invoices,
+           COALESCE(SUM("amountUntaxed"), 0) AS taxable,
+           COALESCE(SUM("amountCgst"), 0) AS cgst,
+           COALESCE(SUM("amountSgst"), 0) AS sgst,
+           COALESCE(SUM("amountIgst"), 0) AS igst,
+           COALESCE(SUM("amountOtherTax"), 0) AS other,
+           COALESCE(SUM("amountTax"), 0) AS tax
+    FROM "Invoice"
+    WHERE status IN ('CONFIRMED', 'PAID') AND "invoiceDate" BETWEEN ${from}::date AND ${to}::date
+    GROUP BY 1 ORDER BY 1`;
+
+  const rates = await prisma.$queryRaw`
+    SELECT l."taxRate" AS rate,
+           COALESCE(SUM(l.subtotal - l."discountAmount"), 0) AS taxable,
+           COALESCE(SUM(l."cgstAmount"), 0) AS cgst,
+           COALESCE(SUM(l."sgstAmount"), 0) AS sgst,
+           COALESCE(SUM(l."igstAmount"), 0) AS igst,
+           COALESCE(SUM(l."otherTaxAmount"), 0) AS other,
+           COALESCE(SUM(l."taxAmount"), 0) AS tax
+    FROM "InvoiceLine" l JOIN "Invoice" i ON i.id = l."invoiceId"
+    WHERE i.status IN ('CONFIRMED', 'PAID') AND i."invoiceDate" BETWEEN ${from}::date AND ${to}::date
+    GROUP BY l."taxRate" ORDER BY l."taxRate"`;
+
+  const shape = (r) => {
+    const row = {
+      taxable: r2(r.taxable), cgst: r2(r.cgst), sgst: r2(r.sgst), igst: r2(r.igst), other: r2(r.other), tax: r2(r.tax),
+    };
+    row.unsplit = r2(row.tax - row.cgst - row.sgst - row.igst - row.other);
+    return row;
+  };
+  const byMonth = months.map((m) => ({ month: m.month, invoices: m.invoices, ...shape(m) }));
+  const byRate = rates.map((x) => ({ rate: num(x.rate), ...shape(x) }));
+  const sum = (rows, k) => r2(rows.reduce((a, x) => a + x[k], 0));
+  const totals = Object.fromEntries(['taxable', 'cgst', 'sgst', 'igst', 'other', 'tax', 'unsplit'].map((k) => [k, sum(byMonth, k)]));
+  totals.invoices = byMonth.reduce((a, x) => a + x.invoices, 0);
+
+  return { from, to, supplier: { name: env.COMPANY_NAME, gstin: env.COMPANY_GSTIN, stateCode: env.COMPANY_STATE_CODE }, totals, byMonth, byRate };
+}

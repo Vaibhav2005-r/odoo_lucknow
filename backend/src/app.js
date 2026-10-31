@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { rateLimit } from 'express-rate-limit';
 import { env } from './config/env.js';
 import { requireAuth } from './middleware/auth.js';
+import { GST_STATES } from './lib/gst.js';
 import { errorHandler } from './middleware/error.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
@@ -22,10 +23,14 @@ import billingRoutes from './modules/billing/billing.routes.js';
 import invoiceRoutes from './modules/invoices/invoices.routes.js';
 import paymentRoutes from './modules/payments/payments.routes.js';
 import reportRoutes from './modules/reports/reports.routes.js';
+import reminderRoutes from './modules/reminders/reminders.routes.js';
+import { razorpayWebhook } from './modules/payments/webhook.js';
 
 export const app = express();
 if (env.TRUST_PROXY) app.set('trust proxy', env.TRUST_PROXY); // correct client IPs for rate limiting behind nginx
 app.use(helmet());
+// Razorpay signs the exact bytes it sends, so this one route reads the body raw (before express.json)
+app.post('/api/webhooks/razorpay', express.raw({ type: '*/*', limit: '1mb' }), razorpayWebhook);
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(morgan('dev')); // prints the response time of every request: proof for "< 2 seconds"
@@ -34,6 +39,17 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 100 }), authRoutes);
 
 app.use('/api', requireAuth); // everything below needs a login
+// who we are (printed on invoices) and the GST state list (for customer forms)
+app.get('/api/company', (req, res) =>
+  res.json({
+    data: {
+      name: env.COMPANY_NAME,
+      gstin: env.COMPANY_GSTIN,
+      stateCode: env.COMPANY_STATE_CODE,
+      address: env.COMPANY_ADDRESS,
+      states: GST_STATES,
+    },
+  }));
 app.use('/api/users', userRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/taxes', taxRoutes);
@@ -48,6 +64,7 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/reminders', reminderRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: { message: 'Not found' } }));
 app.use(errorHandler);

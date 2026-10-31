@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { inr, date, due } from '../../lib/format';
+import { TaxRows, SupplyInfo } from '../../components/TaxRows';
 import RecordPaymentModal from './RecordPaymentModal';
 
 export default function InvoiceDetail() {
@@ -371,6 +372,7 @@ export default function InvoiceDetail() {
                 <tr key={line.id} className="hover:bg-slate-50/50">
                   <td className="py-3.5 px-4 font-medium text-slate-900">
                     {line.description}
+                    {line.hsnSac && <div className="text-[11px] font-normal text-slate-400">HSN/SAC {line.hsnSac}</div>}
                   </td>
                   <td className="py-3.5 px-4 text-center text-slate-700">
                     {line.quantity}
@@ -401,6 +403,10 @@ export default function InvoiceDetail() {
           </table>
         </div>
 
+        <div className="px-5 py-3 border-t border-slate-200">
+          <SupplyInfo invoice={invoice} />
+        </div>
+
         {/* Totals Calculation Summary */}
         <div className="p-5 border-t border-slate-200 bg-slate-50/50 flex flex-col items-end">
           <div className="w-full sm:w-80 space-y-2 text-sm">
@@ -421,10 +427,7 @@ export default function InvoiceDetail() {
               <span className="font-medium text-slate-800">{inr(invoice.amountUntaxed)}</span>
             </div>
 
-            <div className="flex justify-between text-slate-600">
-              <span>Tax (GST):</span>
-              <span className="font-medium text-slate-800">{inr(invoice.amountTax)}</span>
-            </div>
+            <TaxRows invoice={invoice} rowClass="flex justify-between text-slate-600" />
 
             <div className="flex justify-between text-base font-bold text-slate-900 pt-2 border-t-2 border-slate-300">
               <span>Total Invoice Amount:</span>

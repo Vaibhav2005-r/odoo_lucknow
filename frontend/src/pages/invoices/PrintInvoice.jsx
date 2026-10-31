@@ -4,11 +4,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Printer, ArrowLeft, CheckCircle, Clock } from 'lucide-react';
 import { api } from '../../lib/api';
 import { inr, date, due } from '../../lib/format';
+import { TaxRows, SupplyInfo } from '../../components/TaxRows';
+import { useCompany } from '../../lib/useCompany';
 import { useForceLight } from '../../context/ThemeContext';
 
 export default function PrintInvoice() {
   useForceLight(); // an invoice is paper: always light, whatever theme the app uses
   const { id } = useParams();
+  const { data: company } = useCompany();
 
   const { data: invoice, isLoading, error } = useQuery({
     queryKey: ['invoice-print', id],
@@ -68,10 +71,11 @@ export default function PrintInvoice() {
       {/* Invoice Document Header */}
       <div className="flex justify-between items-start pb-8 border-b-2 border-slate-900">
         <div>
-          <h1 className="text-3xl font-extrabold text-brand-700 tracking-tight">Brightloop Software</h1>
+          <h1 className="text-3xl font-extrabold text-brand-700 tracking-tight">{company?.name || 'Brightloop Software'}</h1>
           <p className="text-xs text-slate-500 mt-1">Subscription Billing & Cloud Management</p>
-          <p className="text-xs text-slate-500">Mumbai, Maharashtra, India</p>
+          <p className="text-xs text-slate-500">{company?.address}</p>
           <p className="text-xs text-slate-500">Email: billing@brightloop.in</p>
+          <p className="text-xs font-mono font-semibold text-slate-700 mt-1">GSTIN: {invoice.supplierGstin || company?.gstin}</p>
         </div>
 
         <div className="text-right">
@@ -109,6 +113,7 @@ export default function PrintInvoice() {
               GSTIN: {snapshot.gstin}
             </p>
           )}
+          <SupplyInfo invoice={invoice} className="text-[11px] text-slate-600 mt-1" />
         </div>
 
         <div className="text-right">
@@ -146,7 +151,10 @@ export default function PrintInvoice() {
           <tbody className="divide-y divide-slate-200">
             {invoice.lines?.map((l) => (
               <tr key={l.id}>
-                <td className="py-3 font-medium text-slate-900">{l.description}</td>
+                <td className="py-3 font-medium text-slate-900">
+                  {l.description}
+                  {l.hsnSac && <span className="text-[10px] text-slate-400 block">HSN/SAC {l.hsnSac}</span>}
+                </td>
                 <td className="py-3 text-center text-slate-700">{l.quantity}</td>
                 <td className="py-3 text-right text-slate-700">{inr(l.unitPrice)}</td>
                 <td className="py-3 text-right text-slate-700">{inr(l.subtotal)}</td>
@@ -181,10 +189,7 @@ export default function PrintInvoice() {
             <span>Untaxed Base:</span>
             <span>{inr(invoice.amountUntaxed)}</span>
           </div>
-          <div className="flex justify-between text-slate-600">
-            <span>GST / Taxes:</span>
-            <span>{inr(invoice.amountTax)}</span>
-          </div>
+          <TaxRows invoice={invoice} rowClass="flex justify-between text-slate-600" />
           <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t-2 border-slate-900">
             <span>Grand Total:</span>
             <span>{inr(invoice.amountTotal)}</span>

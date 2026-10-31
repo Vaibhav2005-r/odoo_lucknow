@@ -4,7 +4,7 @@ import { requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { todayIn, fmtDate } from '../../lib/billing-core.js';
 import { env } from '../../config/env.js';
-import { getSummary, revenueByMonth, getExpiringSoon, getCustomerStatement } from './reports.service.js';
+import { getSummary, revenueByMonth, getExpiringSoon, getCustomerStatement, getGstSummary } from './reports.service.js';
 
 const router = Router();
 
@@ -96,6 +96,55 @@ router.get('/customer-statement/:id', async (req, res, next) => {
   try {
     const data = await getCustomerStatement(req.params.id);
     res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Indian financial year: 1 April to 31 March
+function financialYearStart(today) {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  return `${m >= 4 ? y : y - 1}-04-01`;
+}
+const gstQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+const gstRange = (q) => {
+  const today = fmtDate(todayIn(env.APP_TZ));
+  return { from: q.from || financialYearStart(today), to: q.to || today };
+};
+
+// GET /api/reports/gst-summary - CGST / SGST / IGST collected, by month and by rate
+router.get('/gst-summary', validate(gstQuerySchema, 'query'), async (req, res, next) => {
+  try {
+    res.json(await getGstSummary(gstRange(req.valid.query)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/reports/export-gst - the same figures as a CSV file for the accountant
+router.get('/export-gst', validate(gstQuerySchema, 'query'), async (req, res, next) => {
+  try {
+    const r = await getGstSummary(gstRange(req.valid.query));
+    const line = (a) => a.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+    const head = ['Taxable value', 'CGST', 'SGST', 'IGST', 'Other tax', 'Total tax'];
+    const vals = (x) => [x.taxable, x.cgst, x.sgst, x.igst, x.other, x.tax].map((n) => n.toFixed(2));
+    const rows = [
+      line(['GST summary', r.supplier.name, `GSTIN ${r.supplier.gstin}`, `${r.from} to ${r.to}`]),
+      '',
+      line(['Month', 'Invoices', ...head]),
+      ...r.byMonth.map((m) => line([m.month, m.invoices, ...vals(m)])),
+      line(['Total', r.totals.invoices, ...vals(r.totals)]),
+      '',
+      line(['Tax rate %', '', ...head]),
+      ...r.byRate.map((x) => line([x.rate, '', ...vals(x)])),
+    ];
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="gst-summary-${r.from}-to-${r.to}.csv"`);
+    res.send(rows.join('\r\n'));
   } catch (err) {
     next(err);
   }

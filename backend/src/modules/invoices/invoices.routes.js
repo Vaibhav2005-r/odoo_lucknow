@@ -10,6 +10,9 @@ import { env } from '../../config/env.js';
 import { confirmInvoices, cancelInvoice } from './invoices.service.js';
 import { recordPayment } from '../payments/payments.service.js';
 import { sendMail } from '../../lib/mailer.js';
+import { esc } from '../../lib/email.js';
+import { createCheckout, failIntent, settleIntent } from '../payments/checkout.service.js';
+import { gatewayName, getProvider, verifyCheckoutSignature } from '../payments/gateway.js';
 
 const router = Router();
 
@@ -265,6 +268,8 @@ const portalPaySchema = z.object({
 });
 
 router.post('/:id/pay', validate(portalPaySchema), async (req, res) => {
+  // This shortcut records a payment without any money moving, so it only exists for demos on the test gateway.
+  if (gatewayName() !== 'mock') throw httpError(403, 'Please use online checkout to pay this invoice');
   const invoiceId = paramId(req);
   const inv = await prisma.invoice.findUnique({
     where: { id: invoiceId },
@@ -299,6 +304,57 @@ router.post('/:id/pay', validate(portalPaySchema), async (req, res) => {
   res.status(201).json({ payment, message: 'Payment recorded successfully' });
 });
 
+// ---------- online checkout (customer pays their own invoice; staff may start one on a customer's behalf)
+
+// POST /api/invoices/:id/checkout - create a payment order for what is still owed
+router.post('/:id/checkout', async (req, res) => {
+  res.status(201).json({ data: await createCheckout(paramId(req), req.user) });
+});
+
+const verifySchema = z.object({
+  orderId: z.string().min(5).max(80),
+  paymentId: z.string().min(5).max(80),
+  signature: z.string().min(10).max(200),
+});
+
+// POST /api/invoices/:id/checkout/verify - the browser reports a finished Razorpay payment; we check the signature
+router.post('/:id/checkout/verify', validate(verifySchema), async (req, res) => {
+  const invoiceId = paramId(req);
+  if (gatewayName() !== 'razorpay') throw httpError(404, 'Not found');
+  const { orderId, paymentId, signature } = req.body;
+  if (!verifyCheckoutSignature({ orderId, paymentId, signature })) throw httpError(400, 'Payment signature could not be verified');
+  const inv = await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { customerId: true } });
+  if (!inv || (req.user.role === 'CUSTOMER' && req.user.customerId !== inv.customerId)) throw httpError(404, 'Invoice not found');
+
+  let method = 'OTHER';
+  try {
+    method = (await getProvider().fetchPayment(paymentId)).method;
+  } catch {
+    /* the payment is already verified; the method is only a label */
+  }
+  res.json({ data: await settleIntent({ orderId, paymentId, method, invoiceId }) });
+});
+
+const mockSchema = z.object({
+  orderId: z.string().min(5).max(80),
+  outcome: z.enum(['success', 'failure']),
+  method: z.enum(['UPI', 'CARD', 'BANK_TRANSFER']).default('UPI'),
+});
+
+// POST /api/invoices/:id/checkout/mock-complete - finish a test-gateway payment (demo mode only)
+router.post('/:id/checkout/mock-complete', validate(mockSchema), async (req, res) => {
+  if (gatewayName() !== 'mock') throw httpError(404, 'Not found');
+  const invoiceId = paramId(req);
+  const inv = await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { customerId: true } });
+  if (!inv || (req.user.role === 'CUSTOMER' && req.user.customerId !== inv.customerId)) throw httpError(404, 'Invoice not found');
+  const { orderId, outcome, method } = req.body;
+  if (outcome === 'failure') {
+    await failIntent(orderId, 'Test payment declined');
+    return res.json({ data: { status: 'FAILED' } });
+  }
+  return res.json({ data: await settleIntent({ orderId, paymentId: `pay_mock_${Date.now().toString(36)}`, method, invoiceId }) });
+});
+
 // POST /api/invoices/:id/send - Send invoice email to customer
 router.post('/:id/send', requireRole('ADMIN', 'STAFF'), async (req, res) => {
   const id = paramId(req);
@@ -319,7 +375,7 @@ router.post('/:id/send', requireRole('ADMIN', 'STAFF'), async (req, res) => {
     .map(
       (l) =>
         `<tr>
-          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${l.description}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${esc(l.description)}</td>
           <td style="padding: 8px; text-align: center; border-bottom: 1px solid #e2e8f0;">${l.quantity}</td>
           <td style="padding: 8px; text-align: right; border-bottom: 1px solid #e2e8f0;">₹${Number(l.total).toFixed(2)}</td>
         </tr>`,
@@ -329,8 +385,8 @@ router.post('/:id/send', requireRole('ADMIN', 'STAFF'), async (req, res) => {
   const link = `${env.CLIENT_URL}/portal/invoices/${invoice.id}`;
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
-      <h2 style="color: #714b67;">Invoice ${invoice.number} from ${env.COMPANY_NAME}</h2>
-      <p>Dear ${invoice.customer.name},</p>
+      <h2 style="color: #714b67;">Invoice ${esc(invoice.number)} from ${env.COMPANY_NAME}</h2>
+      <p>Dear ${esc(invoice.customer.name)},</p>
       <p>Here is your invoice for the billing period.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
         <thead>
@@ -387,9 +443,9 @@ router.post('/:id/remind', requireRole('ADMIN', 'STAFF'), async (req, res) => {
 
   const html = `
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
-      <h2 style="color: #b91c1c;">Payment Reminder: Invoice ${invoice.number} is Overdue</h2>
-      <p>Dear ${invoice.customer.name},</p>
-      <p>This is a friendly reminder that invoice <strong>${invoice.number}</strong> was due on <strong>${invoice.dueDate.toISOString().slice(0, 10)}</strong> and is now <strong>${days} day(s) overdue</strong>.</p>
+      <h2 style="color: #b91c1c;">Payment Reminder: Invoice ${esc(invoice.number)} is Overdue</h2>
+      <p>Dear ${esc(invoice.customer.name)},</p>
+      <p>This is a friendly reminder that invoice <strong>${esc(invoice.number)}</strong> was due on <strong>${invoice.dueDate.toISOString().slice(0, 10)}</strong> and is now <strong>${days} day(s) overdue</strong>.</p>
       <p style="font-size: 16px; font-weight: bold; color: #b91c1c;">Outstanding Balance: ₹${dueAmt.toFixed(2)}</p>
       <p><a href="${link}" style="display: inline-block; padding: 10px 20px; background: #714b67; color: white; text-decoration: none; border-radius: 6px;">Review Invoice in Portal</a></p>
       <p>If you have already made this payment, please disregard this email.</p>

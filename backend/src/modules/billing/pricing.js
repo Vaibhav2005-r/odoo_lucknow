@@ -5,7 +5,7 @@ export const SUB_INCLUDE = {
   plan: true,
   paymentTerm: true,
   discount: { include: { products: { select: { id: true } } } },
-  lines: { include: { taxes: true }, orderBy: { id: 'asc' } },
+  lines: { include: { taxes: true, product: { select: { hsnSac: true } } }, orderBy: { id: 'asc' } },
 };
 
 export const toRule = (d) => ({
@@ -28,6 +28,10 @@ export const lineInput = (l) => ({
   quantity: l.quantity,
   unitPrice: Number(l.unitPrice),
   taxRates: (l.taxes || []).map((t) => Number(t.rate)),
+  // the GST part of the line's tax (cess and other taxes are charged as they are)
+  gstRate: (l.taxes || []).filter((t) => t.kind !== 'OTHER').reduce((a, t) => a + Number(t.rate), 0),
+  taxes: l.taxes || [],
+  hsnSac: l.product?.hsnSac ?? null,
   isActive: l.isActive,
   description: l.description,
   taxLabel: (l.taxes || []).map((t) => t.name).join(', '),

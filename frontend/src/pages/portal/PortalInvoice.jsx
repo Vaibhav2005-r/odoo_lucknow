@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { inr, date, due } from '../../lib/format';
+import { TaxRows, SupplyInfo } from '../../components/TaxRows';
+import PayNow from '../../components/PayNow';
+import { useCompany } from '../../lib/useCompany';
 import {
   ArrowLeft,
   Printer,
@@ -19,6 +22,8 @@ export default function PortalInvoice() {
   const { id } = useParams();
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
+  const { data: company } = useCompany();
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -33,7 +38,7 @@ export default function PortalInvoice() {
       }
     };
     fetchInvoice();
-  }, [id]);
+  }, [id, reload]);
 
   if (loading) {
     return (
@@ -135,9 +140,9 @@ export default function PortalInvoice() {
 
           <div className="sm:text-right">
             <h4 className="font-bold text-slate-400 uppercase tracking-wider text-[11px] mb-2">Issued By</h4>
-            <div className="font-bold text-slate-900 text-sm">Brightloop Software Pvt. Ltd.</div>
-            <div className="text-slate-500 ">Cyber City, DLF Phase II, Gurugram, Haryana</div>
-            <div className="text-slate-500 ">GSTIN: 06AAAAA0000A1Z5</div>
+            <div className="font-bold text-slate-900 text-sm">{company?.name || 'Brightloop Software'}</div>
+            <div className="text-slate-500 ">{company?.address}</div>
+            <div className="text-slate-500 ">GSTIN: {invoice.supplierGstin || company?.gstin}</div>
             {invoice.periodStart && invoice.periodEnd && (
               <div className="mt-2 text-indigo-600 font-medium">
                 Billing Cycle: {date(invoice.periodStart)} – {date(invoice.periodEnd)}
@@ -163,11 +168,13 @@ export default function PortalInvoice() {
                 <tr key={idx}>
                   <td className="py-3 px-4">
                     <div className="font-semibold text-slate-900 ">{line.description}</div>
+                    {line.hsnSac && <div className="text-[11px] text-slate-400">HSN/SAC {line.hsnSac}</div>}
                   </td>
                   <td className="py-3 px-4 text-center text-slate-700 ">{line.quantity}</td>
                   <td className="py-3 px-4 text-right text-slate-700 ">{inr(line.unitPrice)}</td>
                   <td className="py-3 px-4 text-right text-slate-700 ">
-                    {line.taxRate ? `${line.taxRate}% (${inr(line.taxAmount)})` : '0%'}
+                    {line.taxRate ? inr(line.taxAmount) : '₹0.00'}
+                    {line.taxLabel && <div className="text-[10px] text-slate-400">{line.taxLabel}</div>}
                   </td>
                   <td className="py-3 px-4 text-right font-semibold text-slate-900 ">
                     {inr(line.total)}
@@ -191,10 +198,7 @@ export default function PortalInvoice() {
                 <span>-{inr(invoice.amountDiscount)}</span>
               </div>
             )}
-            <div className="flex justify-between text-slate-500 ">
-              <span>Tax (GST)</span>
-              <span>{inr(invoice.amountTax)}</span>
-            </div>
+            <TaxRows invoice={invoice} rowClass="flex justify-between text-slate-500 " />
             <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-slate-900 text-sm">
               <span>Total Invoice Amount</span>
               <span>{inr(invoice.amountTotal)}</span>
@@ -207,8 +211,10 @@ export default function PortalInvoice() {
               <span>Balance Remaining</span>
               <span>{inr(unpaid)}</span>
             </div>
+            <PayNow invoice={invoice} onPaid={() => setReload((n) => n + 1)} className="w-full mt-2" />
           </div>
         </div>
+        <SupplyInfo invoice={invoice} className="text-[11px] text-slate-400 text-right" />
 
         {/* Payment History */}
         {invoice.payments && invoice.payments.length > 0 && (

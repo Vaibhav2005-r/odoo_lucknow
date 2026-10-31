@@ -43,6 +43,7 @@ export default function Products() {
     salesPrice: '',
     costPrice: '',
     description: '',
+    hsnSac: '',
     taxId: 1,
     imageUrl: '',
     isActive: true,
@@ -97,6 +98,7 @@ export default function Products() {
       salesPrice: '',
       costPrice: '',
       description: '',
+      hsnSac: '',
       taxId: taxes[0]?.id ?? '',
       imageUrl: '',
       isActive: true,
@@ -121,6 +123,7 @@ export default function Products() {
       salesPrice: product.salesPrice,
       costPrice: product.costPrice || '',
       description: product.description || '',
+      hsnSac: product.hsnSac || '',
       taxId: product.taxIds?.[0] ?? taxes[0]?.id ?? '',
       imageUrl: product.imageUrl || '',
       isActive: product.isActive,
@@ -197,6 +200,7 @@ export default function Products() {
       salesPrice: Number(formData.salesPrice),
       costPrice: Number(formData.costPrice) || 0,
       description: formData.description.trim(),
+      hsnSac: formData.hsnSac.trim() || null,
       taxIds: formData.taxId ? [Number(formData.taxId)] : [],
       isActive: formData.isActive,
       variants: formData.variants,
@@ -625,6 +629,20 @@ export default function Products() {
                       {formData.isActive ? 'Product is Active' : 'Product is Inactive'}
                     </span>
                   </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">HSN / SAC code</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={8}
+                    value={formData.hsnSac}
+                    onChange={(e) => setFormData({ ...formData, hsnSac: e.target.value.replace(/\D/g, '') })}
+                    placeholder="e.g. 998314 (software services)"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">Printed on invoices. 4 to 8 digits; SAC for services, HSN for goods.</p>
                 </div>
 
                 <div className="md:col-span-2">

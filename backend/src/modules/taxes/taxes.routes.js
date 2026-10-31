@@ -11,12 +11,14 @@ const router = Router();
 const createTaxSchema = z.object({
   name: z.string().trim().min(2, 'Tax name must be at least 2 characters').max(50),
   rate: z.coerce.number().min(0, 'Tax rate cannot be negative').max(100, 'Tax rate cannot exceed 100%'),
+  kind: z.enum(['GST', 'OTHER']).default('GST'),
   isActive: z.boolean().default(true),
 });
 
 const updateTaxSchema = z.object({
   name: z.string().trim().min(2, 'Tax name must be at least 2 characters').max(50).optional(),
   rate: z.coerce.number().min(0, 'Tax rate cannot be negative').max(100, 'Tax rate cannot exceed 100%').optional(),
+  kind: z.enum(['GST', 'OTHER']).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -52,7 +54,7 @@ router.get('/:id', requireRole('ADMIN', 'STAFF'), async (req, res) => {
 
 // POST /api/taxes - Admin only creates tax rules
 router.post('/', requireRole('ADMIN'), validate(createTaxSchema), async (req, res) => {
-  const { name, rate, isActive } = req.body;
+  const { name, rate, isActive, kind } = req.body;
 
   const existing = await prisma.tax.findUnique({ where: { name } });
   if (existing) {
@@ -60,7 +62,7 @@ router.post('/', requireRole('ADMIN'), validate(createTaxSchema), async (req, re
   }
 
   const tax = await prisma.tax.create({
-    data: { name, rate, isActive },
+    data: { name, rate, isActive, kind },
   });
 
   res.status(201).json({ data: tax });

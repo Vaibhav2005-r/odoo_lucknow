@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js';
 import { env } from '../../config/env.js';
 import { computeTotals, duePeriods, addPeriods, addDays, toRupees, todayIn } from '../../lib/billing-core.js';
 import { nextNumber } from '../../lib/sequence.js';
+import { placeOfSupply, splitTaxLine, taxLabel } from '../../lib/gst.js';
 import { SUB_INCLUDE, lineInput, loadDiscountCandidates } from './pricing.js';
 
 const state = { running: false, startedAt: null, finishedAt: null, processed: 0, invoicesCreated: 0, failed: [] };
@@ -24,6 +25,13 @@ async function billNextPeriod(tx, subscriptionId, asOf) {
   const totals = computeTotals(lines.map(lineInput), await loadDiscountCandidates(tx, sub), asOf);
   const number = await nextNumber(tx, 'INV', asOf.getUTCFullYear());
 
+  // GST: same state as us -> CGST + SGST, another state -> IGST. Computed per line so the invoice can show each.
+  const supplyState = placeOfSupply(sub.customer, env.COMPANY_STATE_CODE);
+  const interState = supplyState !== env.COMPANY_STATE_CODE;
+  const split = totals.lines.map((l) =>
+    splitTaxLine({ taxPaise: l.tax, taxRate: l.taxRate, gstRate: l.gstRate, interState }));
+  const sumOf = (k) => split.reduce((a, x) => a + x[k], 0);
+
   await tx.invoice.create({
     data: {
       number,
@@ -39,6 +47,13 @@ async function billNextPeriod(tx, subscriptionId, asOf) {
       amountUntaxed: toRupees(totals.untaxed),
       amountTax: toRupees(totals.tax),
       amountTotal: toRupees(totals.total),
+      supplierGstin: env.COMPANY_GSTIN,
+      placeOfSupply: supplyState,
+      interState,
+      amountCgst: toRupees(sumOf('cgst')),
+      amountSgst: toRupees(sumOf('sgst')),
+      amountIgst: toRupees(sumOf('igst')),
+      amountOtherTax: toRupees(sumOf('other')),
       appliedDiscountIds: totals.appliedDiscountIds,
       customerSnapshot: {
         name: sub.customer.name,
@@ -46,9 +61,10 @@ async function billNextPeriod(tx, subscriptionId, asOf) {
         company: sub.customer.company,
         address: sub.customer.address,
         gstin: sub.customer.gstin,
+        stateCode: supplyState,
       },
       lines: {
-        create: totals.lines.map((l) => ({
+        create: totals.lines.map((l, i) => ({
           productId: l.productId,
           description: l.description,
           quantity: l.quantity,
@@ -56,8 +72,13 @@ async function billNextPeriod(tx, subscriptionId, asOf) {
           subtotal: toRupees(l.subtotal),
           discountAmount: toRupees(l.discount),
           taxRate: l.taxRate,
-          taxLabel: l.taxLabel || null,
+          taxLabel: taxLabel(l.taxes, interState) || l.taxLabel || null,
           taxAmount: toRupees(l.tax),
+          hsnSac: l.hsnSac,
+          cgstAmount: toRupees(split[i].cgst),
+          sgstAmount: toRupees(split[i].sgst),
+          igstAmount: toRupees(split[i].igst),
+          otherTaxAmount: toRupees(split[i].other),
           total: toRupees(l.total),
         })),
       },

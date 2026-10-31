@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import GstFields from '../../components/GstFields';
+import { useCompany } from '../../lib/useCompany';
 import { inr, date } from '../../lib/format';
 import { ArrowLeft, Edit2, Mail, Phone, MapPin, Building, KeyRound, Repeat, Receipt, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -18,7 +20,9 @@ export default function CustomerDetail() {
   const [company, setCompany] = useState('');
   const [address, setAddress] = useState('');
   const [gstin, setGstin] = useState('');
+  const [stateCode, setStateCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const { data: us } = useCompany(); // our own company details (the customer's company name is `company`)
 
   const fetchCustomer = async () => {
     try {
@@ -30,6 +34,7 @@ export default function CustomerDetail() {
       setCompany(res.data.company || '');
       setAddress(res.data.address || '');
       setGstin(res.data.gstin || '');
+      setStateCode(res.data.stateCode || '');
     } catch (err) {
       toast.error(err.message || 'Failed to load customer profile');
     } finally {
@@ -51,6 +56,7 @@ export default function CustomerDetail() {
         company: company || null,
         address: address || null,
         gstin: gstin || null,
+        stateCode: stateCode || null,
       });
       toast.success('Customer profile updated successfully!');
       setShowEditModal(false);
@@ -163,6 +169,10 @@ export default function CustomerDetail() {
             <div className="text-slate-700 pl-6.5">
               <span className="text-xs text-slate-400 uppercase font-semibold">GSTIN: </span>
               <span className="font-mono">{customer.gstin || 'Not provided'}</span>
+            </div>
+            <div className="text-slate-700 pl-6.5">
+              <span className="text-xs text-slate-400 uppercase font-semibold">State: </span>
+              <span>{customer.stateCode ? `${us?.states?.[customer.stateCode] || ''} (${customer.stateCode})` : `Same as us (${us?.states?.[us?.stateCode] || '…'})`}</span>
             </div>
           </div>
 
@@ -376,15 +386,7 @@ export default function CustomerDetail() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">GSTIN</label>
-                <input
-                  type="text"
-                  value={gstin}
-                  onChange={(e) => setGstin(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 uppercase"
-                />
-              </div>
+              <GstFields gstin={gstin} setGstin={setGstin} stateCode={stateCode} setStateCode={setStateCode} />
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Billing Address</label>

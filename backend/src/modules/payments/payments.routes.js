@@ -5,7 +5,9 @@ import { paramId, paginate } from '../../lib/params.js';
 import { validate } from '../../middleware/validate.js';
 import { requireRole, ownScope, isInternal } from '../../middleware/auth.js';
 import { parseDate } from '../../lib/billing-core.js';
+import { env } from '../../config/env.js';
 import { recordPayment, reconcileCustomerPayment } from './payments.service.js';
+import { gatewayName } from './gateway.js';
 
 const router = Router();
 
@@ -157,6 +159,24 @@ router.post('/', requireRole('ADMIN', 'STAFF'), validate(paymentSchema.extend({ 
   } catch (err) {
     next(err);
   }
+});
+
+// GET /api/payments/gateway - is online payment on, and through whom (the portal hides "Pay" when it is not)
+router.get('/gateway', (req, res) => {
+  const provider = gatewayName();
+  res.json({ data: { provider, keyId: provider === 'razorpay' ? env.RAZORPAY_KEY_ID : null } });
+});
+
+// GET /api/payments/intents - online payments, newest first. ?status=REVIEW lists money taken but not applied.
+router.get('/intents', requireRole('ADMIN', 'STAFF'), async (req, res) => {
+  const status = ['CREATED', 'PAID', 'FAILED', 'REVIEW'].includes(req.query.status) ? req.query.status : undefined;
+  const rows = await prisma.paymentIntent.findMany({
+    where: { status },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    include: { invoice: { select: { id: true, number: true, customer: { select: { name: true } } } } },
+  });
+  res.json({ data: rows });
 });
 
 // GET /api/payments/:id - Payment detail

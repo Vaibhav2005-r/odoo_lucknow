@@ -5,6 +5,7 @@
 // Safe to re-run: it stops if bulk data is already there.
 import { prisma } from '../src/lib/prisma.js';
 import { todayIn, addDays, addPeriods, periodBounds, fmtDate } from '../src/lib/billing-core.js';
+import { env } from '../src/config/env.js';
 
 const COUNT = Math.max(100, Number(process.argv[2]) || 3000);
 const today = todayIn();
@@ -16,6 +17,7 @@ const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 const chunks = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 const money = (n) => Math.round(n * 100) / 100;
+const cgstOf = (tax) => Math.floor(tax * 100 / 2) / 100; // half the GST; SGST takes the odd paisa
 
 async function main() {
   const t0 = Date.now();
@@ -47,6 +49,7 @@ async function main() {
         company: `${l} ${kind[(i * 7) % kind.length]}`,
         phone: `98${String(10000000 + i * 37).slice(-8)}`,
         address: `${10 + (i % 90)}, ${area[i % area.length]}, Lucknow, Uttar Pradesh`,
+        stateCode: '09',
       };
     }),
     skipDuplicates: true,
@@ -143,9 +146,15 @@ async function main() {
         dueDate: addDays(p.start, m.term.dueDays || 15), periodStart: p.start, periodEnd: p.end,
         amountSubtotal: m.subtotal, amountUntaxed: m.subtotal, amountTax: m.tax, amountTotal: money(m.subtotal + m.tax),
         amountPaid: status === 'PAID' ? money(m.subtotal + m.tax) : 0,
-        customerSnapshot: { name: m.customer.name, email: m.customer.email },
+        supplierGstin: env.COMPANY_GSTIN, placeOfSupply: '09', interState: false,
+        amountCgst: cgstOf(m.tax), amountSgst: money(m.tax - cgstOf(m.tax)), amountIgst: 0, amountOtherTax: 0,
+        customerSnapshot: { name: m.customer.name, email: m.customer.email, stateCode: '09' },
         confirmedAt: status === 'DRAFT' ? null : p.start, paidAt: status === 'PAID' ? addDays(p.start, 5) : null,
-        _line: { productId: m.plan.productId, description: m.plan.product.name, quantity: m.qty, unitPrice: m.unit, subtotal: m.subtotal, taxRate: m.taxRate, taxAmount: m.tax, total: money(m.subtotal + m.tax) },
+        _line: {
+          productId: m.plan.productId, description: m.plan.product.name, quantity: m.qty, unitPrice: m.unit, subtotal: m.subtotal,
+          taxRate: m.taxRate, taxAmount: m.tax, total: money(m.subtotal + m.tax), hsnSac: m.plan.product.hsnSac,
+          taxLabel: `CGST ${m.taxRate / 2}% + SGST ${m.taxRate / 2}%`, cgstAmount: cgstOf(m.tax), sgstAmount: money(m.tax - cgstOf(m.tax)),
+        },
       });
     });
   }

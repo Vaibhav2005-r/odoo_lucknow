@@ -26,6 +26,7 @@ const productBase = {
   type: z.enum(['SERVICE', 'GOODS', 'ADDON']),
   salesPrice: z.coerce.number().min(0, 'Sales price cannot be negative'),
   costPrice: z.coerce.number().min(0, 'Cost price cannot be negative'),
+  hsnSac: z.string().trim().regex(/^\d{4,8}$/, 'HSN/SAC is 4 to 8 digits').nullable().optional().or(z.literal('').transform(() => null)),
   notes: z.string().trim().max(2000).nullable().optional(),
   taxIds: z.array(z.coerce.number().int().positive()).optional(),
   variants: z.array(variantSchema).optional(),

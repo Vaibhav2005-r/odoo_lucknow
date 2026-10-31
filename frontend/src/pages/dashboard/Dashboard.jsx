@@ -289,6 +289,18 @@ export default function Dashboard() {
             <Download className="w-3.5 h-3.5" />
             Export CSV
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              const p = new URLSearchParams({ from: customRange.from, to: customRange.to });
+              window.open(`/api/reports/export-gst?${p.toString()}`, '_blank');
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+            title="CGST, SGST and IGST collected in the selected period, for your accountant"
+          >
+            <Download className="w-3.5 h-3.5" />
+            GST summary
+          </button>
           <Link
             to="/app/billing"
             className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors"

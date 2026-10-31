@@ -23,6 +23,7 @@ const toPayload = (d) => ({
   ...(d.salesPrice !== undefined ? { salesPrice: Number(d.salesPrice) } : {}),
   ...(d.costPrice !== undefined ? { costPrice: Number(d.costPrice) } : {}),
   ...(d.description !== undefined ? { notes: d.description || null } : {}),
+  ...(d.hsnSac !== undefined ? { hsnSac: d.hsnSac || null } : {}),
   ...(d.taxIds !== undefined ? { taxIds: d.taxIds } : {}),
   ...(d.isActive !== undefined ? { isActive: d.isActive } : {}),
   ...(Array.isArray(d.variants)

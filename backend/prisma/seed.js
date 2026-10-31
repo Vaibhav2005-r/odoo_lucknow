@@ -67,6 +67,7 @@ async function main() {
     crm = await prisma.product.create({
       data: {
         name: 'Brightloop CRM',
+        hsnSac: '998314',
         type: 'SERVICE',
         salesPrice: 1200,
         costPrice: 300,
@@ -90,6 +91,7 @@ async function main() {
     analytics = await prisma.product.create({
       data: {
         name: 'Brightloop Analytics',
+        hsnSac: '998314',
         type: 'SERVICE',
         salesPrice: 2000,
         costPrice: 500,
@@ -103,6 +105,7 @@ async function main() {
     storage = await prisma.product.create({
       data: {
         name: 'Extra Storage 100 GB',
+        hsnSac: '998315',
         type: 'ADDON',
         salesPrice: 299,
         costPrice: 50,
@@ -116,6 +119,7 @@ async function main() {
     support = await prisma.product.create({
       data: {
         name: 'Priority Support',
+        hsnSac: '998313',
         type: 'ADDON',
         salesPrice: 999,
         costPrice: 200,
@@ -259,6 +263,7 @@ async function main() {
       company: 'Sharma Retail',
       phone: '9820000001',
       address: 'Andheri West, Mumbai',
+      stateCode: '27',
       userId: riyaUser.id,
     },
   });
@@ -271,6 +276,7 @@ async function main() {
       email: 'accounts@mehtalogistics.in',
       company: 'Mehta Logistics',
       gstin: '27AAAAA0000A1Z5',
+      stateCode: '27',
       address: 'BKC, Mumbai',
     },
   });

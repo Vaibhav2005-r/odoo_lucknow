@@ -5,8 +5,37 @@ import { requireRole, ownScope, isInternal } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { paramId, paginate } from '../../lib/params.js';
 import { httpError } from '../../lib/http-error.js';
+import { isStateCode, isValidGstin, normaliseGstin, stateFromGstin } from '../../lib/gst.js';
 
 const router = Router();
+
+// blank -> null; otherwise a well-formed GSTIN in upper case
+const gstinField = z
+  .string()
+  .trim()
+  .nullable()
+  .transform((v) => normaliseGstin(v))
+  .refine((v) => v == null || isValidGstin(v), 'Enter a valid 15-character GSTIN, e.g. 09AABCB1234C1Z7')
+  .optional(); // optional() LAST: when the field is not sent it stays undefined, so an update never wipes it
+const stateField = z
+  .string()
+  .trim()
+  .nullable()
+  .transform((v) => v || null)
+  .refine((v) => v == null || isStateCode(v), 'Choose a valid GST state')
+  .optional();
+
+// The state in a GSTIN must agree with the state chosen; if only a GSTIN is given, take its state.
+function reconcileState(data, existing = {}) {
+  const gstin = data.gstin !== undefined ? data.gstin : existing.gstin;
+  const state = data.stateCode !== undefined ? data.stateCode : existing.stateCode;
+  const fromGstin = stateFromGstin(gstin);
+  if (fromGstin && state && fromGstin !== state) {
+    throw httpError(422, 'The GSTIN and the state do not match', { stateCode: ['This state does not match the GSTIN'] });
+  }
+  if (fromGstin && !state) return { ...data, stateCode: fromGstin };
+  return data;
+}
 
 const createCustomerSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100),
@@ -14,7 +43,8 @@ const createCustomerSchema = z.object({
   phone: z.string().trim().max(20).optional().nullable(),
   company: z.string().trim().max(100).optional().nullable(),
   address: z.string().trim().max(250).optional().nullable(),
-  gstin: z.string().trim().max(20).optional().nullable(),
+  gstin: gstinField,
+  stateCode: stateField,
 });
 
 const updateCustomerSchema = z.object({
@@ -23,7 +53,8 @@ const updateCustomerSchema = z.object({
   phone: z.string().trim().max(20).optional().nullable(),
   company: z.string().trim().max(100).optional().nullable(),
   address: z.string().trim().max(250).optional().nullable(),
-  gstin: z.string().trim().max(20).optional().nullable(),
+  gstin: gstinField,
+  stateCode: stateField,
 });
 
 const listQuerySchema = z.object({
@@ -153,6 +184,7 @@ router.patch('/me', validate(updateCustomerSchema), async (req, res) => {
   if (req.user.role === 'CUSTOMER') {
     delete req.body.email;
     delete req.body.gstin;
+    delete req.body.stateCode;
   }
 
   const updated = await prisma.customer.update({
@@ -316,15 +348,17 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/customers - Staff & Admin can create customers
 router.post('/', requireRole('ADMIN', 'STAFF'), validate(createCustomerSchema), async (req, res) => {
-  const { name, email, phone, company, address, gstin } = req.body;
+  const { name, email, phone, company, address, gstin, stateCode } = reconcileState(req.body);
 
   const existing = await prisma.customer.findUnique({ where: { email } });
   if (existing) {
     throw httpError(409, 'A customer with this email already exists');
   }
 
-  // Check if a user account with this email already exists
-  const matchingUser = await prisma.user.findUnique({ where: { email } });
+  // Attach an existing login only if its owner has proved they control this e-mail address; otherwise anyone
+  // could sign up with a customer's address and be handed that customer's data. (/auth/verify-email links it later.)
+  const found = await prisma.user.findUnique({ where: { email } });
+  const matchingUser = found?.emailVerifiedAt ? found : null;
 
   const customer = await prisma.customer.create({
     data: {
@@ -334,6 +368,7 @@ router.post('/', requireRole('ADMIN', 'STAFF'), validate(createCustomerSchema), 
       company: company || null,
       address: address || null,
       gstin: gstin || null,
+      stateCode: stateCode || null,
       userId: matchingUser?.id || null,
     },
   });
@@ -351,10 +386,12 @@ router.patch('/:id', validate(updateCustomerSchema), async (req, res) => {
     // Customers can only update name, phone, company, address
     delete req.body.email;
     delete req.body.gstin;
+    delete req.body.stateCode;
   }
 
   const existing = await prisma.customer.findUnique({ where: { id } });
   if (!existing) throw httpError(404, 'Customer not found');
+  req.body = reconcileState(req.body, existing);
 
   if (req.body.email && req.body.email !== existing.email) {
     const duplicate = await prisma.customer.findUnique({ where: { email: req.body.email } });

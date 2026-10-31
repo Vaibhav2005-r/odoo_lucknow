@@ -52,6 +52,24 @@ enum DiscountScope {
   SUBSCRIPTION
 }
 
+enum TaxKind {
+  GST // splits into CGST + SGST (same state) or IGST (other state) on invoices
+  OTHER // charged as is (cess, VAT ...)
+}
+
+enum NotificationKind {
+  INVOICE_DUE_SOON
+  INVOICE_OVERDUE
+  RENEWAL_UPCOMING
+}
+
+enum PaymentIntentStatus {
+  CREATED
+  PAID
+  FAILED
+  REVIEW // the gateway took the money but it could not be applied to the invoice: a person must sort it out
+}
+
 enum PaymentMethod {
   CASH
   BANK_TRANSFER
@@ -64,18 +82,18 @@ enum PaymentMethod {
 // ---------- Identity ----------
 
 model User {
-  id           Int                  @id @default(autoincrement())
-  name         String
-  email        String               @unique // always stored lower-case
-  passwordHash String
-  role         Role                 @default(CUSTOMER)
-  isActive     Boolean              @default(true)
+  id              Int                      @id @default(autoincrement())
+  name            String
+  email           String                   @unique // always stored lower-case
+  passwordHash    String
+  role            Role                     @default(CUSTOMER)
+  isActive        Boolean                  @default(true)
   emailVerifiedAt DateTime? // set when the owner clicks the e-mailed link (or when an admin creates the account)
-  customer     Customer?
-  resetTokens  PasswordResetToken[]
-  verifyTokens EmailVerificationToken[]
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  customer        Customer?
+  resetTokens     PasswordResetToken[]
+  verifyTokens    EmailVerificationToken[]
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
 }
 
 model PasswordResetToken {
@@ -110,6 +128,7 @@ model Customer {
   company       String?
   address       String?
   gstin         String?
+  stateCode     String? // GST state code (e.g. "09" Uttar Pradesh): decides CGST+SGST versus IGST
   userId        Int?           @unique // set when the customer has a portal login
   user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   subscriptions Subscription[]
@@ -127,6 +146,7 @@ model Tax {
   id                Int                @id @default(autoincrement())
   name              String             @unique // "GST 18%"
   rate              Decimal            @db.Decimal(5, 2) // percent
+  kind              TaxKind            @default(GST)
   isActive          Boolean            @default(true)
   products          Product[]
   subscriptionLines SubscriptionLine[]
@@ -150,6 +170,7 @@ model Product {
   type              ProductType        @default(SERVICE)
   salesPrice        Decimal            @db.Decimal(12, 2)
   costPrice         Decimal            @default(0) @db.Decimal(12, 2)
+  hsnSac            String? // HSN (goods) or SAC (services) code printed on invoices
   notes             String?
   isActive          Boolean            @default(true)
   taxes             Tax[]
@@ -282,6 +303,7 @@ model Subscription {
   lines           SubscriptionLine[]
   invoices        Invoice[]
   history         SubscriptionLog[]
+  notifications   NotificationLog[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
@@ -330,24 +352,31 @@ model SubscriptionLog {
 // ---------- Billing ----------
 
 model Invoice {
-  id                 Int           @id @default(autoincrement())
-  number             String        @unique // INV/2026/00001
+  id                 Int               @id @default(autoincrement())
+  number             String            @unique // INV/2026/00001
   subscriptionId     Int?
-  subscription       Subscription? @relation(fields: [subscriptionId], references: [id])
+  subscription       Subscription?     @relation(fields: [subscriptionId], references: [id])
   customerId         Int
-  customer           Customer      @relation(fields: [customerId], references: [id])
-  status             InvoiceStatus @default(DRAFT)
-  invoiceDate        DateTime      @db.Date
-  dueDate            DateTime      @db.Date
-  periodStart        DateTime?     @db.Date
-  periodEnd          DateTime?     @db.Date
-  amountSubtotal     Decimal       @db.Decimal(12, 2)
-  amountDiscount     Decimal       @default(0) @db.Decimal(12, 2)
-  amountUntaxed      Decimal       @db.Decimal(12, 2)
-  amountTax          Decimal       @db.Decimal(12, 2)
-  amountTotal        Decimal       @db.Decimal(12, 2)
-  amountPaid         Decimal       @default(0) @db.Decimal(12, 2)
-  appliedDiscountIds Int[]         @default([])
+  customer           Customer          @relation(fields: [customerId], references: [id])
+  status             InvoiceStatus     @default(DRAFT)
+  invoiceDate        DateTime          @db.Date
+  dueDate            DateTime          @db.Date
+  periodStart        DateTime?         @db.Date
+  periodEnd          DateTime?         @db.Date
+  amountSubtotal     Decimal           @db.Decimal(12, 2)
+  amountDiscount     Decimal           @default(0) @db.Decimal(12, 2)
+  amountUntaxed      Decimal           @db.Decimal(12, 2)
+  amountTax          Decimal           @db.Decimal(12, 2)
+  amountTotal        Decimal           @db.Decimal(12, 2)
+  amountPaid         Decimal           @default(0) @db.Decimal(12, 2)
+  appliedDiscountIds Int[]             @default([])
+  supplierGstin      String? // our GSTIN at invoice time
+  placeOfSupply      String? // GST state code of the customer at invoice time
+  interState         Boolean           @default(false) // true -> IGST, false -> CGST + SGST
+  amountCgst         Decimal           @default(0) @db.Decimal(12, 2)
+  amountSgst         Decimal           @default(0) @db.Decimal(12, 2)
+  amountIgst         Decimal           @default(0) @db.Decimal(12, 2)
+  amountOtherTax     Decimal           @default(0) @db.Decimal(12, 2)
   customerSnapshot   Json? // name, email, company, address, gstin at invoice time
   notes              String?
   confirmedAt        DateTime?
@@ -356,8 +385,10 @@ model Invoice {
   cancelledAt        DateTime?
   lines              InvoiceLine[]
   payments           Payment[]
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  paymentIntents     PaymentIntent[]
+  notifications      NotificationLog[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@unique([subscriptionId, periodStart]) // ← nothing is billed twice
   @@index([status, dueDate])
@@ -379,6 +410,11 @@ model InvoiceLine {
   taxRate        Decimal  @default(0) @db.Decimal(5, 2) // snapshot, total % of all taxes on the line
   taxLabel       String? // snapshot, e.g. "GST 18%"
   taxAmount      Decimal  @default(0) @db.Decimal(12, 2)
+  hsnSac         String? // snapshot of the product's HSN/SAC code
+  cgstAmount     Decimal  @default(0) @db.Decimal(12, 2)
+  sgstAmount     Decimal  @default(0) @db.Decimal(12, 2)
+  igstAmount     Decimal  @default(0) @db.Decimal(12, 2)
+  otherTaxAmount Decimal  @default(0) @db.Decimal(12, 2)
   total          Decimal  @db.Decimal(12, 2)
 
   @@index([invoiceId])
@@ -405,4 +441,48 @@ model Payment {
 model Sequence {
   key   String @id // "SUB/2026", "INV/2026"
   value Int    @default(0)
+}
+
+// ---------- Automatic reminders ----------
+
+// One row per reminder e-mail ever sent. dedupeKey is unique, so running the daily job twice (or two servers
+// at once) can never e-mail the same customer the same reminder twice.
+model NotificationLog {
+  id             Int              @id @default(autoincrement())
+  dedupeKey      String           @unique // e.g. INVOICE_OVERDUE:7:inv:123 or RENEWAL_UPCOMING:30:sub:45:2027-10-30
+  kind           NotificationKind
+  stage          Int // days relative to the trigger date: -3 = three days before due, 7 = a week overdue
+  invoiceId      Int?
+  invoice        Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  subscriptionId Int?
+  subscription   Subscription?    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  customerId     Int
+  recipient      String
+  sentAt         DateTime         @default(now())
+
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([sentAt])
+}
+
+// ---------- Online payments ----------
+
+// One checkout attempt for an invoice. providerOrderId is the gateway's order id (unique), which is what
+// makes verify + webhook idempotent: whichever arrives first records the payment, the other is a no-op.
+model PaymentIntent {
+  id                Int                 @id @default(autoincrement())
+  invoiceId         Int
+  invoice           Invoice             @relation(fields: [invoiceId], references: [id])
+  provider          String // "razorpay" | "mock"
+  providerOrderId   String              @unique
+  providerPaymentId String?
+  amount            Decimal             @db.Decimal(12, 2)
+  currency          String              @default("INR")
+  status            PaymentIntentStatus @default(CREATED)
+  createdById       Int?
+  note              String?
+  createdAt         DateTime            @default(now())
+  paidAt            DateTime?
+
+  @@index([invoiceId])
 }
