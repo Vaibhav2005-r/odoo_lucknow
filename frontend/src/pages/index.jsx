@@ -10,7 +10,7 @@ export { default as Users } from './users/Users';
 export const CustomerList = placeholder('Customers');            // A
 export const CustomerDetail = placeholder('Customer');           // A
 export { default as Taxes } from './config/Taxes';
-export const PaymentTerms = placeholder('Payment terms');        // A
+export { default as PaymentTerms } from './config/PaymentTerms';
 export const MySubscriptions = placeholder('My subscriptions');  // A
 export const PortalSubscription = placeholder('Subscription');   // A
 export const MyInvoices = placeholder('My invoices');            // A
