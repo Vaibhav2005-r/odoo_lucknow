@@ -5,7 +5,7 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 ## Features
 
 - **Roles** — Admin (full control, only role that can add staff), Staff (day-to-day work, limited access) and Customer (portal showing only their own subscriptions and invoices).
-- **Accounts** — signup with unique email and a strong password (more than 8 characters, upper and lower case, special character); password reset by emailed link.
+- **Accounts** — signup with unique email and a strong password (more than 8 characters, upper and lower case, special character); password reset by emailed link. New accounts confirm their email by link; a customer record staff created earlier is only attached once the owner confirms the address, so signing up with someone else's email exposes nothing.
 - **Catalog** — products (name, type, sales price, cost price, notes, taxes) with variants that add to the price (e.g. brand Odoo +560).
 - **Plans** — price, billing period (daily, weekly, monthly, yearly), minimum quantity, availability dates, and per-plan rules for auto-close, early close, pause and renewal.
 - **Quotation templates** — reusable plan, payment term, validity days and product lines.
@@ -170,7 +170,7 @@ This starts PostgreSQL on `localhost:5432` and Mailpit on `http://localhost:8025
 cd backend
 cp .env.example .env
 npm install
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 npm run seed
 npm run dev
 ```
@@ -188,6 +188,15 @@ npm run dev
 ```
 
 The app runs at `http://localhost:5173`. The sign-in page shows one-click demo-account buttons while developing; set `VITE_SHOW_DEMO_LOGINS=true` to show them in a production build.
+
+### Run everything in containers (optional)
+
+```bash
+docker compose --profile app up --build -d
+docker compose exec api npm run seed
+```
+
+The app is then at `http://localhost:8080` (nginx serves the frontend and proxies `/api` to the API; the API applies database migrations on start). Set `JWT_SECRET` in your environment first; terminate TLS in front of nginx for anything beyond a local demo. Plain `docker compose up -d` still starts only PostgreSQL and Mailpit for local development.
 
 ## Demo accounts
 
@@ -210,10 +219,12 @@ npm test
 |---|---|
 | Unit tests | billing maths, password rule, tax and discount validation, role checks |
 | `catalog-subscriptions.test.js` | products, variants, plans, templates, the full subscription lifecycle |
-| `features.test.js` | every feature in the brief against a real database: signup and password rules, reset by e-mail (a small SMTP sink stands in for Mailpit), roles, billing catch-up and no double billing, daily/weekly/monthly/yearly periods, pause and resume, plan rules and auto-close, taxes, discounts (limits, dates, minimums), invoices, payments, overdue, reconcile, portal isolation and reports |
+| `features.test.js` | every feature in the brief against a real database: signup, email confirmation and password rules, reset by e-mail (a small SMTP sink stands in for Mailpit), roles, billing catch-up and no double billing, daily/weekly/monthly/yearly periods, pause and resume, plan rules and auto-close, taxes, discounts (limits, dates, minimums), invoices, payments, overdue, reconcile, portal isolation and reports |
 | `performance.test.js` | every list, search, detail and report endpoint answers in under 2 seconds with thousands of subscriptions |
 
 The database-backed suites need the seeded database and skip themselves when it is not reachable. The performance suite also needs the bulk data below.
+
+The same steps run on every push and pull request in GitHub Actions (`.github/workflows/ci.yml`): create the database from the committed migration, seed it, add 2,500 subscriptions so the performance test runs too, run all tests, and build the frontend.
 
 ### Large data set
 
@@ -228,7 +239,7 @@ With 5,000 subscriptions and about 40,000 invoices every endpoint responds in un
 
 ```
 backend/
-  prisma/             schema and seed
+  prisma/             schema, committed migrations and seed
   src/
     modules/          auth, users, customers, taxes, payment-terms, discounts,
                       products, plans, templates, subscriptions, billing,
@@ -238,6 +249,7 @@ backend/
     middleware/       auth/RBAC, validation, errors
     tests/
 frontend/
+  nginx.conf, Dockerfile
   src/
     pages/            auth, catalog, subscriptions, invoices, payments,
                       customers, discounts, config, portal, dashboard
