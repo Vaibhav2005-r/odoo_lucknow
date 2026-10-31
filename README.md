@@ -53,6 +53,13 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 |---|---|
 | **My subscriptions**<br>![Portal subscriptions](docs/screenshots/portal-subscriptions.png) | **My invoices**<br>![Portal invoices](docs/screenshots/portal-invoices.png) |
 
+### Mid-period changes (proration)
+
+| | |
+|---|---|
+| **Customer add-ons** — switch extras on or off, or add new ones<br>![Customer add-ons](docs/screenshots/portal-addons.png) | **Switching off** — the unused days come back as a credit, shown before confirming<br>![Credit preview](docs/screenshots/proration-dialog.png) |
+| **Adding** — only the days left in the period are charged<br>![Charge preview](docs/screenshots/proration-charge.png) | **Adjustment invoice** — the prorated charge, with GST, ready to pay<br>![Adjustment invoice](docs/screenshots/invoice-adjustment.png) |
+
 ### Sign in
 
 ![Login](docs/screenshots/login.png)
@@ -68,16 +75,19 @@ flowchart LR
     end
     subgraph Server["Express API"]
         MW["Auth + RBAC<br/>validation, errors"]
-        MOD["Modules<br/>catalog, subscriptions, billing,<br/>invoices, payments, reports"]
-        JOB["Nightly job 00:05<br/>activate, bill, auto-close"]
+        MOD["Modules<br/>catalog, subscriptions (with proration), billing,<br/>invoices + PDF, payments, reminders, reports"]
+        JOB["Nightly job 00:05<br/>activate, bill, auto-close, remind"]
     end
     DB[("PostgreSQL<br/>via Prisma")]
     MAIL["SMTP / Mailpit"]
+    PAY["Razorpay<br/>or built-in test gateway"]
 
     UI -- "REST /api + httpOnly cookie" --> MW --> MOD
     JOB --> MOD
     MOD --> DB
-    MOD -- "quotations, invoices,<br/>reset links" --> MAIL
+    MOD -- "quotations, invoices (PDF),<br/>reminders, reset and verify links" --> MAIL
+    UI -- "checkout" --> MOD
+    MOD <-- "orders, signed confirmation,<br/>webhooks" --> PAY
 ```
 
 ### Subscription lifecycle
@@ -89,7 +99,7 @@ stateDiagram-v2
     Quotation --> Confirmed: customer accepts or staff confirms
     Draft --> Confirmed: staff confirms
     Confirmed --> Active: start date reached or activated
-    Active --> Active: pause / resume / renew / switch add-ons
+    Active --> Active: pause / resume / renew / change add-ons (prorated)
     Active --> Closed: close early or auto-close at expiry
     Draft --> Closed
     Quotation --> Closed
@@ -97,7 +107,7 @@ stateDiagram-v2
     Closed --> [*]
 ```
 
-Pause, early close, renewal and auto-close are allowed per plan, according to the plan's flags.
+Pause, early close, renewal and auto-close are allowed per plan, according to the plan's flags. Adding, removing, switching or re-sizing lines on an active subscription is prorated (see [Proration rules](#proration-rules)).
 
 ### Invoice lifecycle
 
@@ -112,6 +122,8 @@ stateDiagram-v2
     Cancelled --> [*]
 ```
 
+An **adjustment invoice** (a prorated charge for a mid-period change) follows the same lifecycle but belongs to no billing period, so it never blocks the regular invoice for that period.
+
 ### Billing run
 
 ```mermaid
@@ -122,9 +134,10 @@ sequenceDiagram
     T->>S: run(today)
     S->>D: active, unpaused subscriptions with next invoice date <= today
     loop each subscription, each missed period
-        S->>S: price lines, apply discounts, add taxes (in paise)
+        S->>S: price lines, apply discounts, add taxes and the GST split (in paise)
+        S->>D: lock the subscription, apply pending proration credits as negative lines
         S->>D: create draft invoice (unique per subscription + period start)
-        S->>D: use up discounts, move next invoice date forward
+        S->>D: use up discounts and credits, move next invoice date forward
     end
     Note over S,D: A second run finds nothing to bill, so nothing is billed twice
 ```
@@ -149,6 +162,11 @@ erDiagram
     SUBSCRIPTION ||--o{ INVOICE : "billed as"
     INVOICE ||--|{ INVOICE_LINE : has
     INVOICE ||--o{ PAYMENT : "settled by"
+    INVOICE ||--o{ PAYMENT_INTENT : "online checkout"
+    INVOICE ||--o{ NOTIFICATION_LOG : "reminders"
+    SUBSCRIPTION ||--o{ SUBSCRIPTION_CREDIT : "pending credits"
+    SUBSCRIPTION_CREDIT }o--o| INVOICE : "applied on"
+    USER ||--o{ EMAIL_VERIFICATION_TOKEN : "confirms email"
 ```
 
 ## Tech stack
@@ -159,6 +177,10 @@ erDiagram
 | Database | PostgreSQL 16 with Prisma 6 |
 | Auth | bcryptjs, JWT in httpOnly cookies |
 | Email | Nodemailer (Mailpit locally) |
+| Payments | Razorpay (orders, signed checkout, webhooks) and a built-in test gateway |
+| PDF | pdfkit with Noto Sans embedded |
+| Scheduling | node-cron (billing, auto-close, reminders) |
+| Tests and CI | `node --test` against a real PostgreSQL, GitHub Actions, Docker |
 | Frontend | React 19, Vite, Tailwind CSS 4, TanStack Query, React Hook Form, Recharts, Lucide |
 
 ## Getting started
@@ -252,6 +274,8 @@ cd backend
 npm test
 ```
 
+There are 160 automated tests in total.
+
 | Suite | What it covers |
 |---|---|
 | Unit tests | billing maths, password rule, tax and discount validation, role checks |
@@ -285,9 +309,10 @@ backend/
   src/
     modules/          auth, users, customers, taxes, payment-terms, discounts,
                       products, plans, templates, subscriptions, billing,
-                      invoices, payments, reports
-    lib/              billing-core (money maths in paise), sequences, mailer
-    jobs/             nightly activation, billing and auto-close
+                      invoices, payments, reminders, reports
+    lib/              billing-core (money maths in paise), proration, gst, sequences,
+                      mailer, amount-in-words
+    jobs/             nightly activation, billing, auto-close and reminders
     middleware/       auth/RBAC, validation, errors
     tests/
 frontend/
@@ -308,8 +333,9 @@ All routes are under `/api` and need a login except `/api/auth`.
 | `/auth` | signup, login, logout, me, forgot and reset password |
 | `/users`, `/customers` | staff accounts, customers |
 | `/taxes`, `/payment-terms`, `/discounts` | configuration (admin writes, staff reads) |
+| `/products/addons` | optional add-ons any signed-in user (including customers) may add to their own subscription |
 | `/products`, `/variants`, `/plans`, `/quotation-templates` | catalog (admin writes, staff reads) |
-| `/subscriptions` | create, edit, send-quotation, confirm, activate, pause, resume, renew, close, add-on lines |
+| `/subscriptions` | create, edit, send-quotation, confirm, activate, pause, resume, renew, close, add-on lines (prorated), `POST /:id/changes/preview` shows the cost of a change without making it |
 | `/billing` | run billing, billing status |
 | `/invoices`, `/payments` | invoices (including `/:id/pdf`) and payment recording |
 | `/reports` | summary, revenue by month, GST summary (`/gst-summary`, `/export-gst`) |
