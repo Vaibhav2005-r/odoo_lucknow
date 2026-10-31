@@ -25,10 +25,10 @@ export const TemplateForm = placeholder('Quotation template');   // B
 export const SubscriptionList = placeholder('Subscriptions');    // B
 export const SubscriptionForm = placeholder('New subscription'); // B
 export const SubscriptionDetail = placeholder('Subscription');   // B
-export const Dashboard = placeholder('Dashboard');               // C
+export { default as Dashboard } from './dashboard/Dashboard';
 export { default as DiscountList } from './discounts/DiscountList';
 export { default as DiscountForm } from './discounts/DiscountForm';
-export const BillingRun = placeholder('Run billing');            // C
+export { default as BillingRun } from './billing/BillingRun';
 export { default as InvoiceList } from './invoices/InvoiceList';
 export { default as InvoiceDetail } from './invoices/InvoiceDetail';
 export { default as PrintInvoice } from './invoices/PrintInvoice';
