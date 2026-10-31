@@ -30,6 +30,9 @@ import {
 } from 'recharts';
 import { api } from '../../lib/api';
 import { inr, date, due } from '../../lib/format';
+import Hero from '../../components/Hero';
+import CountUp from '../../components/CountUp';
+import { useAuth } from '../../context/AuthContext';
 
 function getPresets() {
   const now = new Date();
@@ -157,8 +160,8 @@ export default function Dashboard() {
       value: summary?.activeSubscriptions ?? 0,
       format: (v) => v.toLocaleString('en-IN'),
       icon: Users,
-      color: 'text-blue-600 dark:text-blue-400',
-      bg: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900',
+      color: 'text-blue-600 ',
+      bg: 'bg-blue-50 border-blue-200 ',
       badge: 'Live',
     },
     {
@@ -166,8 +169,8 @@ export default function Dashboard() {
       value: summary?.mrr ?? 0,
       format: inr,
       icon: TrendingUp,
-      color: 'text-indigo-600 dark:text-indigo-400',
-      bg: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-900',
+      color: 'text-indigo-600 ',
+      bg: 'bg-indigo-50 border-indigo-200 ',
       badge: 'Normalized',
     },
     {
@@ -175,8 +178,8 @@ export default function Dashboard() {
       value: summary?.arr ?? 0,
       format: inr,
       icon: Repeat,
-      color: 'text-violet-600 dark:text-violet-400',
-      bg: 'bg-violet-50 dark:bg-violet-950/40 border-violet-200 dark:border-violet-900',
+      color: 'text-violet-600 ',
+      bg: 'bg-violet-50 border-violet-200 ',
       badge: 'MRR × 12',
     },
     {
@@ -184,8 +187,8 @@ export default function Dashboard() {
       value: summary?.collected ?? 0,
       format: inr,
       icon: CheckCircle2,
-      color: 'text-emerald-600 dark:text-emerald-400',
-      bg: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900',
+      color: 'text-emerald-600 ',
+      bg: 'bg-emerald-50 border-emerald-200 ',
       badge: 'Realized',
     },
     {
@@ -193,8 +196,8 @@ export default function Dashboard() {
       value: summary?.invoiced ?? 0,
       format: inr,
       icon: Receipt,
-      color: 'text-sky-600 dark:text-sky-400',
-      bg: 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-900',
+      color: 'text-sky-600 ',
+      bg: 'bg-sky-50 border-sky-200 ',
       badge: 'Billed',
     },
     {
@@ -202,8 +205,8 @@ export default function Dashboard() {
       value: summary?.outstanding ?? 0,
       format: inr,
       icon: Clock,
-      color: 'text-amber-600 dark:text-amber-400',
-      bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900',
+      color: 'text-amber-600 ',
+      bg: 'bg-amber-50 border-amber-200 ',
       badge: 'Pending',
     },
     {
@@ -211,22 +214,46 @@ export default function Dashboard() {
       value: summary?.overdueAmount ?? 0,
       format: inr,
       icon: AlertTriangle,
-      color: 'text-rose-600 dark:text-rose-400',
-      bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900',
+      color: 'text-rose-600 ',
+      bg: 'bg-rose-50 border-rose-200 ',
       badge: `${summary?.overdueCount ?? 0} invoices`,
       highlight: (summary?.overdueCount ?? 0) > 0,
     },
   ];
 
+  const { user } = useAuth();
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const overdueCount = summary?.overdueCount ?? 0;
+
   return (
     <div className="space-y-6 pb-12">
+      <Hero
+        title={`${greeting}, ${(user?.name || '').split(' ')[0] || 'there'}`}
+        subtitle={
+          overdueCount > 0
+            ? `${overdueCount.toLocaleString('en-IN')} invoice${overdueCount === 1 ? ' is' : 's are'} overdue (${inr(summary?.overdueAmount ?? 0)}). A quick reminder round could bring that in.`
+            : `All caught up: nothing is overdue. ${(summary?.activeSubscriptions ?? 0).toLocaleString('en-IN')} subscriptions are billing on schedule.`
+        }
+        mood={overdueCount > 0 ? 'idle' : 'happy'}
+        actions={[
+          { to: '/app/billing', label: 'Run billing', primary: true },
+          { to: '/app/invoices', label: overdueCount > 0 ? 'Review overdue' : 'View invoices' },
+          { to: '/app/subscriptions/new', label: 'New subscription' },
+        ]}
+        chips={[
+          { label: 'Monthly recurring', value: summary?.mrr ?? 0, format: inr },
+          { label: 'Active subscriptions', value: summary?.activeSubscriptions ?? 0 },
+        ]}
+      />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 ">
             Financial Dashboard
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-slate-500 ">
             Real-time subscription metrics, revenue trends, and cashflow health
           </p>
         </div>
@@ -240,7 +267,7 @@ export default function Dashboard() {
               queryClient.invalidateQueries({ queryKey: ['reports-expiring'] });
               toast.success('Dashboard refreshed');
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
             title="Refresh metrics"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -256,7 +283,7 @@ export default function Dashboard() {
               if (selectedPlanId) p.append('planId', selectedPlanId);
               window.open(`/api/reports/export-summary?${p.toString()}`, '_blank');
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
             title="Download CSV report"
           >
             <Download className="w-3.5 h-3.5" />
@@ -273,10 +300,10 @@ export default function Dashboard() {
       </div>
 
       {/* Filter Toolbar */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/80 p-4 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
         {/* Date presets */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 mr-1 flex items-center gap-1">
+          <span className="text-xs font-medium text-slate-500 mr-1 flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5" /> Period:
           </span>
           {Object.entries(presets).map(([key, item]) => {
@@ -288,8 +315,8 @@ export default function Dashboard() {
                 onClick={() => handlePresetChange(key)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
                   isSelected
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 '
                 }`}
               >
                 {item.label}
@@ -305,14 +332,14 @@ export default function Dashboard() {
               type="date"
               value={customRange.from}
               onChange={(e) => handleCustomDateChange('from', e.target.value)}
-              className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <span className="text-xs text-slate-400">to</span>
             <input
               type="date"
               value={customRange.to}
               onChange={(e) => handleCustomDateChange('to', e.target.value)}
-              className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
@@ -321,7 +348,7 @@ export default function Dashboard() {
             <select
               value={selectedPlanId}
               onChange={(e) => setSelectedPlanId(e.target.value)}
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-800 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
               <option value="">All Plans</option>
               {plans.map((pl) => (
@@ -341,14 +368,14 @@ export default function Dashboard() {
           return (
             <div
               key={idx}
-              className={`rounded-xl border p-4 bg-white dark:bg-slate-800 shadow-sm transition-all hover:shadow-md ${
+              className={`rounded-xl border p-4 bg-white shadow-sm transition-all hover:shadow-md ${
                 kpi.highlight
-                  ? 'border-rose-300 dark:border-rose-800 ring-1 ring-rose-200 dark:ring-rose-900/30'
-                  : 'border-slate-200 dark:border-slate-700/80'
+                  ? 'border-rose-300 ring-1 ring-rose-200 '
+                  : 'border-slate-200 '
               }`}
             >
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 ">
                   {kpi.label}
                 </span>
                 <div className={`p-2 rounded-lg border ${kpi.bg}`}>
@@ -357,19 +384,19 @@ export default function Dashboard() {
               </div>
 
               <div className="flex items-baseline justify-between gap-2">
-                <div className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
+                <div className="text-2xl font-bold tracking-tight text-slate-900 ">
                   {isSummaryLoading ? (
-                    <span className="inline-block w-20 h-6 bg-slate-200 dark:bg-slate-700 animate-pulse rounded" />
+                    <span className="inline-block w-20 h-6 bg-slate-200 animate-pulse rounded" />
                   ) : (
-                    kpi.format(kpi.value)
+                    <CountUp value={kpi.value} format={kpi.format} />
                   )}
                 </div>
                 {kpi.badge && (
                   <span
                     className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                       kpi.highlight
-                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                        ? 'bg-rose-100 text-rose-700 '
+                        : 'bg-slate-100 text-slate-600 '
                     }`}
                   >
                     {kpi.badge}
@@ -382,24 +409,24 @@ export default function Dashboard() {
       </div>
 
       {/* 12-Month Revenue & Cashflow Bar Chart */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/80 p-5 shadow-sm">
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            <h2 className="text-base font-semibold text-slate-900 ">
               12-Month Invoiced vs Collected
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 ">
               Total invoiced volume versus collected payments month over month
             </p>
           </div>
           <div className="flex items-center gap-4 text-xs">
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-sm bg-indigo-500 inline-block" />
-              <span className="text-slate-600 dark:text-slate-300">Invoiced</span>
+              <span className="text-slate-600 ">Invoiced</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block" />
-              <span className="text-slate-600 dark:text-slate-300">Collected</span>
+              <span className="text-slate-600 ">Collected</span>
             </div>
           </div>
         </div>
@@ -416,17 +443,17 @@ export default function Dashboard() {
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.6} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
                 <XAxis
                   dataKey="month"
                   tickLine={false}
-                  axisLine={{ stroke: '#cbd5e1' }}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  axisLine={{ stroke: 'var(--chart-axis)' }}
+                  tick={{ fontSize: 11, fill: 'var(--chart-text)' }}
                 />
                 <YAxis
                   tickLine={false}
                   axisLine={false}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tick={{ fontSize: 11, fill: 'var(--chart-text)' }}
                   tickFormatter={(val) => `₹${(val / 1000).toFixed(0)}k`}
                 />
                 <Tooltip
@@ -453,18 +480,18 @@ export default function Dashboard() {
       {/* Two Column Section: Overdue Invoices & Expiring Soon */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Overdue Invoices Widget */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/80 p-5 shadow-sm flex flex-col justify-between">
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-rose-500" />
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <h3 className="text-sm font-semibold text-slate-900 ">
                   Critical Overdue Invoices
                 </h3>
               </div>
               <Link
                 to="/app/invoices?view=OVERDUE"
-                className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                className="text-xs font-medium text-indigo-600 hover:underline flex items-center gap-1"
               >
                 View all ({summary?.overdueCount ?? 0})
                 <ArrowRight className="w-3 h-3" />
@@ -474,12 +501,12 @@ export default function Dashboard() {
             {isOverdueLoading ? (
               <div className="text-xs text-slate-400 py-6 text-center">Loading overdue invoices...</div>
             ) : overdueInvoices.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+              <div className="py-8 text-center text-xs text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200 ">
                 <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1.5" />
                 All invoices are fully paid or on schedule!
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+              <div className="divide-y divide-slate-100 ">
                 {overdueInvoices.slice(0, 5).map((inv) => {
                   const unpaid = due(inv);
                   return (
@@ -488,23 +515,23 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2">
                           <Link
                             to={`/app/invoices/${inv.id}`}
-                            className="font-semibold text-slate-900 dark:text-slate-100 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1"
+                            className="font-semibold text-slate-900 hover:text-indigo-600 flex items-center gap-1"
                           >
                             {inv.number}
                             <ExternalLink className="w-3 h-3 text-slate-400" />
                           </Link>
-                          <span className="text-[10px] font-medium text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900">
+                          <span className="text-[10px] font-medium text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 ">
                             Due {date(inv.dueDate)}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5">
                           {inv.customer?.name} {inv.customer?.company ? `(${inv.customer.company})` : ''}
                         </div>
                       </div>
 
                       <div className="text-right flex items-center gap-3">
                         <div>
-                          <div className="font-bold text-slate-900 dark:text-slate-100">{inr(unpaid)}</div>
+                          <div className="font-bold text-slate-900 ">{inr(unpaid)}</div>
                           <div className="text-[10px] text-slate-400">Total: {inr(inv.amountTotal)}</div>
                         </div>
 
@@ -512,7 +539,7 @@ export default function Dashboard() {
                           type="button"
                           onClick={() => reminderMutation.mutate(inv.id)}
                           disabled={reminderMutation.isPending}
-                          className="px-2.5 py-1.5 text-[11px] font-medium rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition-colors flex items-center gap-1 shadow-sm"
+                          className="px-2.5 py-1.5 text-[11px] font-medium rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors flex items-center gap-1 shadow-sm"
                           title="Send email reminder to customer"
                         >
                           <Mail className="w-3 h-3" />
@@ -526,10 +553,10 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60 text-right">
+          <div className="pt-3 border-t border-slate-100 text-right">
             <Link
               to="/app/invoices?view=OVERDUE"
-              className="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+              className="text-xs font-medium text-slate-600 hover:text-slate-900 "
             >
               Manage collection workflows &rarr;
             </Link>
@@ -537,18 +564,18 @@ export default function Dashboard() {
         </div>
 
         {/* Expiring Soon Subscriptions Widget */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/80 p-5 shadow-sm flex flex-col justify-between">
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-500" />
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <h3 className="text-sm font-semibold text-slate-900 ">
                   Expiring in Next 30 Days
                 </h3>
               </div>
               <Link
                 to="/app/subscriptions"
-                className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                className="text-xs font-medium text-indigo-600 hover:underline flex items-center gap-1"
               >
                 All Subscriptions
                 <ArrowRight className="w-3 h-3" />
@@ -558,35 +585,35 @@ export default function Dashboard() {
             {isExpiringLoading ? (
               <div className="text-xs text-slate-400 py-6 text-center">Loading expiring subscriptions...</div>
             ) : expiringSoon.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+              <div className="py-8 text-center text-xs text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200 ">
                 <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1.5" />
                 No subscriptions expiring within the next 30 days!
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+              <div className="divide-y divide-slate-100 ">
                 {expiringSoon.slice(0, 5).map((sub) => (
                   <div key={sub.id} className="py-3 flex items-center justify-between gap-3 text-xs">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <Link
                           to={`/app/subscriptions/${sub.id}`}
-                          className="font-semibold text-slate-900 dark:text-slate-100 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1"
+                          className="font-semibold text-slate-900 hover:text-indigo-600 flex items-center gap-1"
                         >
                           {sub.customer?.name}
                           <ExternalLink className="w-3 h-3 text-slate-400" />
                         </Link>
-                        <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-900">
+                        <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 ">
                           Expires {date(sub.expiryDate)}
                         </span>
                       </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      <div className="text-[11px] text-slate-500 truncate mt-0.5">
                         Plan: {sub.plan?.name || 'Custom'} {sub.customer?.company ? `• ${sub.customer.company}` : ''}
                       </div>
                     </div>
 
                     <Link
                       to={`/app/subscriptions/${sub.id}`}
-                      className="px-2.5 py-1.5 text-[11px] font-medium rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
+                      className="px-2.5 py-1.5 text-[11px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                     >
                       Inspect
                     </Link>
@@ -596,10 +623,10 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60 text-right">
+          <div className="pt-3 border-t border-slate-100 text-right">
             <Link
               to="/app/subscriptions"
-              className="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+              className="text-xs font-medium text-slate-600 hover:text-slate-900 "
             >
               Manage subscription renewals &rarr;
             </Link>

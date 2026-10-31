@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { RequireRole } from './components/layout/RequireRole';
 import AppLayout from './components/layout/AppLayout';
 import PortalLayout from './components/layout/PortalLayout';
@@ -12,6 +13,7 @@ const IN = ['ADMIN', 'STAFF'];
 
 export default function App() {
   return (
+    <ThemeProvider>
     <QueryClientProvider client={qc}>
       <AuthProvider>
         <BrowserRouter>
@@ -94,5 +96,6 @@ export default function App() {
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
+    </ThemeProvider>
   );
 }

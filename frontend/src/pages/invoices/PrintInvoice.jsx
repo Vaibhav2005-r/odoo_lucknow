@@ -4,8 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Printer, ArrowLeft, CheckCircle, Clock } from 'lucide-react';
 import { api } from '../../lib/api';
 import { inr, date, due } from '../../lib/format';
+import { useForceLight } from '../../context/ThemeContext';
 
 export default function PrintInvoice() {
+  useForceLight(); // an invoice is paper: always light, whatever theme the app uses
   const { id } = useParams();
 
   const { data: invoice, isLoading, error } = useQuery({

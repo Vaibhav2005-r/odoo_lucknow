@@ -12,6 +12,9 @@ import {
   CreditCard,
   ShieldCheck,
 } from 'lucide-react';
+import ThemeToggle from '../ThemeToggle';
+import Hero from '../Hero';
+import { inr } from '../../lib/format';
 
 export default function PortalLayout() {
   const { user, logout } = useAuth();
@@ -88,7 +91,7 @@ export default function PortalLayout() {
                   <div className="font-bold text-base text-slate-900 leading-tight">
                     LoopBill <span className="text-brand-600 text-xs font-semibold px-1.5 py-0.5 rounded-sm bg-brand-50 border border-brand-200 ml-1">Portal</span>
                   </div>
-                  <div className="text-[11px] text-slate-500">Customer Account Center</div>
+                  <div className="text-[11px] text-slate-500 whitespace-nowrap">Customer Account Center</div>
                 </div>
               </Link>
 
@@ -102,7 +105,7 @@ export default function PortalLayout() {
                       to={item.to}
                       end={item.end}
                       className={({ isActive }) =>
-                        `inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-medium transition-all ${
+                        `inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
                           isActive
                             ? 'bg-brand-50 text-brand-700 font-semibold'
                             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
@@ -124,11 +127,12 @@ export default function PortalLayout() {
 
             {/* Right User Bar */}
             <div className="hidden md:flex items-center gap-4">
+              <ThemeToggle />
               <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
                 <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-800 border border-brand-200 flex items-center justify-center text-xs font-bold">
                   {(user?.name || 'C').charAt(0).toUpperCase()}
                 </div>
-                <div className="text-left text-xs">
+                <div className="text-left text-xs hidden xl:block">
                   <div className="font-semibold text-slate-800 line-clamp-1 max-w-[140px]">{user?.name}</div>
                   <div className="text-[11px] text-slate-500 line-clamp-1 max-w-[140px]">{user?.email}</div>
                 </div>
@@ -147,6 +151,7 @@ export default function PortalLayout() {
 
             {/* Mobile menu button */}
             <div className="flex md:hidden items-center gap-2">
+              <ThemeToggle />
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -217,6 +222,28 @@ export default function PortalLayout() {
       </header>
 
       <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full">
+        {pathname === '/portal' && (
+          <Hero
+            className="mb-6"
+            title={`Hi ${(user?.name || '').split(' ')[0] || 'there'}, welcome back`}
+            subtitle={
+              summary.unpaidInvoices > 0
+                ? `You have ${summary.unpaidInvoices} invoice${summary.unpaidInvoices === 1 ? '' : 's'} waiting to be paid (${inr(summary.outstandingAmount)}).`
+                : summary.pendingQuotations > 0
+                  ? `${summary.pendingQuotations} quotation${summary.pendingQuotations === 1 ? ' is' : 's are'} waiting for your approval.`
+                  : 'You are all paid up. Nothing needs your attention.'
+            }
+            mood={summary.unpaidInvoices > 0 ? 'idle' : 'happy'}
+            actions={[
+              { to: '/portal/invoices', label: summary.unpaidInvoices > 0 ? 'Pay invoices' : 'View invoices', primary: true },
+              { to: '/portal/profile', label: 'My profile' },
+            ]}
+            chips={[
+              { label: 'Outstanding', value: summary.outstandingAmount, format: inr },
+              { label: 'Active plans', value: summary.activeSubscriptions },
+            ]}
+          />
+        )}
         <div key={pathname} className="page-enter">
           <Outlet />
         </div>

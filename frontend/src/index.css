@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "./dark-classes.css";
+
+/* make Tailwind's dark: variant follow the app's theme switch instead of the OS setting */
+@custom-variant dark (&:where(:root[data-theme="dark"], :root[data-theme="dark"] *));
 
 /*
  * Design tokens. Every page already uses slate-*, rounded-* and shadow-* utilities, so redefining the
@@ -308,6 +312,123 @@ tbody tr {
 .av[data-mood="peek"] .av-hand-r { transform: translate(8px, -66px) rotate(14deg); }
 .av[data-mood="happy"] .av-hand-l { transform: translate(-16px, -56px) rotate(-28deg); }
 .av[data-mood="happy"] .av-hand-r { transform: translate(16px, -56px) rotate(28deg); }
+
+/* ---------- Dark theme (class re-mapping lives in dark-classes.css) ---------- */
+
+:root {
+  --chart-grid: #e2e8f0;
+  --chart-axis: #cbd5e1;
+  --chart-text: #64748b;
+}
+:root[data-theme="dark"] {
+  --color-slate-700: #36363e;
+  --color-slate-800: #1b1b20;
+  --color-slate-900: #131317;
+  --chart-grid: rgb(255 255 255 / 0.1);
+  --chart-axis: rgb(255 255 255 / 0.18);
+  --chart-text: #a4a4ac;
+  --shadow-2xs: 0 1px 1px rgb(0 0 0 / 0.4);
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.45);
+  --shadow-sm: 0 2px 8px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 8px 24px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 16px 40px rgb(0 0 0 / 0.55), 0 4px 12px rgb(0 0 0 / 0.4);
+  --shadow-xl: 0 28px 70px rgb(0 0 0 / 0.6), 0 8px 20px rgb(0 0 0 / 0.4);
+  --shadow-2xl: 0 40px 100px rgb(0 0 0 / 0.7), 0 10px 30px rgb(0 0 0 / 0.5);
+}
+:root[data-theme="dark"] body { background-color: #0f0f12; color: #f5f5f7; }
+:root[data-theme="dark"] :is(input, select, textarea) {
+  background-color: #1d1d22;
+  color: #f5f5f7;
+  border-color: rgb(255 255 255 / 0.14);
+}
+:root[data-theme="dark"] :is(input, select, textarea)::placeholder { color: #7b7b85; }
+:root[data-theme="dark"] :is(input, select, textarea):disabled { background-color: #17171b; color: #7b7b85; }
+:root[data-theme="dark"] option { background-color: #1d1d22; color: #f5f5f7; }
+:root[data-theme="dark"] ::selection { background: rgb(148 97 138 / 0.5); }
+:root[data-theme="dark"] .glass { background-color: rgb(20 20 24 / 0.72); }
+:root[data-theme="dark"] .auth-side {
+  background:
+    radial-gradient(620px 380px at 85% -5%, rgb(148 97 138 / 0.22), transparent 70%),
+    radial-gradient(500px 340px at 0% 100%, rgb(113 75 103 / 0.16), transparent 70%),
+    #0f0f12;
+}
+:root[data-theme="dark"] .skeleton {
+  background: linear-gradient(100deg, #1d1d22 30%, #2a2a30 50%, #1d1d22 70%);
+  background-size: 200% 100%;
+}
+:root[data-theme="dark"] * { scrollbar-color: rgb(255 255 255 / 0.25) transparent; }
+:root[data-theme="dark"] *::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.22); background-clip: content-box; }
+:root[data-theme="dark"] .fixed.inset-0.z-50 { background-color: rgb(0 0 0 / 0.55); }
+:root[data-theme="dark"] .fixed.inset-0.z-50 > div { background-color: #17171b; border: 1px solid rgb(255 255 255 / 0.1); }
+
+/* theme switch: sliding thumb behind three icon buttons */
+.theme-toggle {
+  display: inline-grid; grid-template-columns: repeat(3, 28px); padding: 3px;
+  border-radius: 999px; background: rgb(0 0 0 / 0.06);
+}
+.theme-toggle button {
+  position: relative; z-index: 1; height: 28px; width: 28px; display: grid; place-items: center;
+  border-radius: 999px; color: var(--color-slate-500); transition: color 0.25s var(--ease-apple);
+}
+.theme-toggle button:hover { color: var(--color-slate-900); }
+.theme-toggle button.is-active { color: var(--color-slate-900); }
+.theme-toggle-thumb {
+  position: absolute; top: 3px; left: 3px; height: 28px; width: 28px; border-radius: 999px;
+  background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+  transform: translateX(calc(var(--i, 1) * 28px));
+  transition: transform 0.45s var(--ease-spring);
+}
+:root[data-theme="dark"] .theme-toggle { background: rgb(255 255 255 / 0.08); }
+:root[data-theme="dark"] .theme-toggle button { color: #8e8e96; }
+:root[data-theme="dark"] .theme-toggle button:hover,
+:root[data-theme="dark"] .theme-toggle button.is-active { color: #fff; }
+:root[data-theme="dark"] .theme-toggle-thumb { background: #3a3a42; box-shadow: 0 1px 4px rgb(0 0 0 / 0.5); }
+.theme-toggle-on-dark { background: rgb(255 255 255 / 0.14) !important; }
+.theme-toggle-on-dark button, .theme-toggle-on-dark button:hover { color: rgb(255 255 255 / 0.7) !important; }
+.theme-toggle-on-dark button.is-active { color: #fff !important; }
+.theme-toggle-on-dark .theme-toggle-thumb { background: rgb(255 255 255 / 0.26) !important; box-shadow: none !important; }
+
+/* ---------- Signed-in screens: same look as the sign-in page ---------- */
+
+.sidebar-bg {
+  background: linear-gradient(175deg, #2a1826 0%, #43293e 40%, #5b3c53 100%);
+  border-right: 1px solid rgb(255 255 255 / 0.06);
+  isolation: isolate;
+}
+:root[data-theme="dark"] .sidebar-bg { background: linear-gradient(175deg, #181018 0%, #26172a 45%, #3b2540 100%); }
+.sidebar-bg .bp-blob { z-index: 0; }
+.sidebar-bg .bp-grid { z-index: 0; }
+
+.app-glow {
+  background:
+    radial-gradient(900px 420px at 85% -12%, rgb(148 97 138 / 0.13), transparent 70%),
+    radial-gradient(700px 420px at 0% 115%, rgb(113 75 103 / 0.08), transparent 70%),
+    var(--color-slate-50);
+}
+:root[data-theme="dark"] .app-glow {
+  background:
+    radial-gradient(900px 420px at 85% -12%, rgb(148 97 138 / 0.2), transparent 70%),
+    radial-gradient(700px 420px at 0% 115%, rgb(113 75 103 / 0.14), transparent 70%),
+    #0f0f12;
+}
+
+/* primary buttons get the sign-in button's gradient */
+.bg-brand-600, .bg-indigo-600 {
+  background-image: linear-gradient(to bottom, var(--color-brand-500), var(--color-brand-700));
+  box-shadow: 0 1px 2px rgb(60 30 55 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+.hover\:bg-brand-700:hover, .hover\:bg-indigo-700:hover {
+  background-image: linear-gradient(to bottom, #a06b94, var(--color-brand-600));
+}
+.bg-brand-600:disabled, .bg-indigo-600:disabled { box-shadow: none; }
+
+/* hero banners reuse the brand panel; keep their text white in both themes */
+.hero { isolation: isolate; box-shadow: var(--shadow-lg); }
+.hero .bp-blob { opacity: 0.45; }
+.hero h2, .hero p { color: #fff; }
+.hero .bp-card { color: #fff; }
+.hero a.hero-cta, :root[data-theme="dark"] .hero a.hero-cta { background-color: #fff; color: var(--color-brand-700); }
+.hero a.hero-cta:hover { background-color: #fff; color: var(--color-brand-600); }
 
 /* Frosted-glass helper used by the header and sidebar */
 .glass {

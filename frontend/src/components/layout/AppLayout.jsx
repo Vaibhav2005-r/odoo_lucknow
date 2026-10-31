@@ -13,7 +13,7 @@ export default function AppLayout() {
   }, [pathname]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="app-glow flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden lg:block shrink-0">
         <Sidebar />

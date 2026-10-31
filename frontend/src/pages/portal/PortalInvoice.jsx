@@ -79,37 +79,37 @@ export default function PortalInvoice() {
       </div>
 
       {/* Invoice Document Box */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-sm overflow-hidden p-6 sm:p-8 space-y-8">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 sm:p-8 space-y-8">
         {/* Document Header */}
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 border-b border-slate-100 dark:border-slate-700/60">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 border-b border-slate-100 ">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">
+              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
                 {invoice.number}
               </h1>
               {invoice.status === 'PAID' ? (
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 ">
                   PAID
                 </span>
               ) : isOverdue ? (
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800 ">
                   OVERDUE
                 </span>
               ) : (
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 ">
                   OUTSTANDING
                 </span>
               )}
             </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Issued: {date(invoice.invoiceDate)} • Due: {date(invoice.dueDate)}
             </p>
           </div>
 
           <div className="text-left sm:text-right">
             <div className="text-xs uppercase tracking-wider font-bold text-slate-400">Amount Due</div>
-            <div className="text-2xl font-extrabold text-slate-900 dark:text-slate-50">
+            <div className="text-2xl font-extrabold text-slate-900 ">
               {unpaid > 0 ? inr(unpaid) : '₹0.00'}
             </div>
           </div>
@@ -119,27 +119,27 @@ export default function PortalInvoice() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs">
           <div>
             <h4 className="font-bold text-slate-400 uppercase tracking-wider text-[11px] mb-2">Billed To</h4>
-            <div className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+            <div className="font-bold text-slate-900 text-sm">
               {invoice.customer?.name}
             </div>
             {invoice.customer?.company && (
-              <div className="text-slate-600 dark:text-slate-300">{invoice.customer.company}</div>
+              <div className="text-slate-600 ">{invoice.customer.company}</div>
             )}
             {invoice.customer?.address && (
-              <div className="text-slate-500 dark:text-slate-400 mt-1">{invoice.customer.address}</div>
+              <div className="text-slate-500 mt-1">{invoice.customer.address}</div>
             )}
             {invoice.customer?.gstin && (
-              <div className="text-slate-500 dark:text-slate-400 mt-0.5">GSTIN: {invoice.customer.gstin}</div>
+              <div className="text-slate-500 mt-0.5">GSTIN: {invoice.customer.gstin}</div>
             )}
           </div>
 
           <div className="sm:text-right">
             <h4 className="font-bold text-slate-400 uppercase tracking-wider text-[11px] mb-2">Issued By</h4>
-            <div className="font-bold text-slate-900 dark:text-slate-100 text-sm">Brightloop Software Pvt. Ltd.</div>
-            <div className="text-slate-500 dark:text-slate-400">Cyber City, DLF Phase II, Gurugram, Haryana</div>
-            <div className="text-slate-500 dark:text-slate-400">GSTIN: 06AAAAA0000A1Z5</div>
+            <div className="font-bold text-slate-900 text-sm">Brightloop Software Pvt. Ltd.</div>
+            <div className="text-slate-500 ">Cyber City, DLF Phase II, Gurugram, Haryana</div>
+            <div className="text-slate-500 ">GSTIN: 06AAAAA0000A1Z5</div>
             {invoice.periodStart && invoice.periodEnd && (
-              <div className="mt-2 text-indigo-600 dark:text-indigo-400 font-medium">
+              <div className="mt-2 text-indigo-600 font-medium">
                 Billing Cycle: {date(invoice.periodStart)} – {date(invoice.periodEnd)}
               </div>
             )}
@@ -147,9 +147,9 @@ export default function PortalInvoice() {
         </div>
 
         {/* Line Items Table */}
-        <div className="border border-slate-200 dark:border-slate-700/80 rounded-xl overflow-hidden">
+        <div className="border border-slate-200 rounded-xl overflow-hidden">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700/80 text-slate-500 font-semibold uppercase tracking-wider">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
               <tr>
                 <th className="py-3 px-4">Item & Description</th>
                 <th className="py-3 px-4 text-center">Qty</th>
@@ -158,18 +158,18 @@ export default function PortalInvoice() {
                 <th className="py-3 px-4 text-right">Total</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+            <tbody className="divide-y divide-slate-100 ">
               {invoice.lines?.map((line, idx) => (
                 <tr key={idx}>
                   <td className="py-3 px-4">
-                    <div className="font-semibold text-slate-900 dark:text-slate-100">{line.description}</div>
+                    <div className="font-semibold text-slate-900 ">{line.description}</div>
                   </td>
-                  <td className="py-3 px-4 text-center text-slate-700 dark:text-slate-300">{line.quantity}</td>
-                  <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">{inr(line.unitPrice)}</td>
-                  <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                  <td className="py-3 px-4 text-center text-slate-700 ">{line.quantity}</td>
+                  <td className="py-3 px-4 text-right text-slate-700 ">{inr(line.unitPrice)}</td>
+                  <td className="py-3 px-4 text-right text-slate-700 ">
                     {line.taxRate ? `${line.taxRate}% (${inr(line.taxAmount)})` : '0%'}
                   </td>
-                  <td className="py-3 px-4 text-right font-semibold text-slate-900 dark:text-slate-100">
+                  <td className="py-3 px-4 text-right font-semibold text-slate-900 ">
                     {inr(line.total)}
                   </td>
                 </tr>
@@ -181,29 +181,29 @@ export default function PortalInvoice() {
         {/* Totals Section */}
         <div className="flex justify-end text-xs">
           <div className="w-full sm:w-72 space-y-2">
-            <div className="flex justify-between text-slate-500 dark:text-slate-400">
+            <div className="flex justify-between text-slate-500 ">
               <span>Subtotal</span>
               <span>{inr(invoice.amountSubtotal)}</span>
             </div>
             {Number(invoice.amountDiscount || 0) > 0 && (
-              <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+              <div className="flex justify-between text-emerald-600 ">
                 <span>Discount</span>
                 <span>-{inr(invoice.amountDiscount)}</span>
               </div>
             )}
-            <div className="flex justify-between text-slate-500 dark:text-slate-400">
+            <div className="flex justify-between text-slate-500 ">
               <span>Tax (GST)</span>
               <span>{inr(invoice.amountTax)}</span>
             </div>
-            <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between font-bold text-slate-900 dark:text-slate-50 text-sm">
+            <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-slate-900 text-sm">
               <span>Total Invoice Amount</span>
               <span>{inr(invoice.amountTotal)}</span>
             </div>
-            <div className="flex justify-between text-slate-500 dark:text-slate-400">
+            <div className="flex justify-between text-slate-500 ">
               <span>Amount Paid</span>
               <span>{inr(invoice.amountPaid)}</span>
             </div>
-            <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between font-bold text-indigo-600 dark:text-indigo-400 text-sm">
+            <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-indigo-600 text-sm">
               <span>Balance Remaining</span>
               <span>{inr(unpaid)}</span>
             </div>
@@ -212,20 +212,20 @@ export default function PortalInvoice() {
 
         {/* Payment History */}
         {invoice.payments && invoice.payments.length > 0 && (
-          <div className="pt-6 border-t border-slate-100 dark:border-slate-700/60">
-            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-xs mb-3 flex items-center gap-1.5">
+          <div className="pt-6 border-t border-slate-100 ">
+            <h4 className="font-bold text-slate-900 text-xs mb-3 flex items-center gap-1.5">
               <CreditCard className="w-4 h-4 text-emerald-500" />
               Recorded Payments
             </h4>
-            <div className="divide-y divide-slate-100 dark:divide-slate-700/60 border border-slate-200 dark:border-slate-700/80 rounded-xl overflow-hidden">
+            <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
               {invoice.payments.map((p) => (
-                <div key={p.id} className="p-3 flex items-center justify-between text-xs bg-slate-50/50 dark:bg-slate-900/30">
+                <div key={p.id} className="p-3 flex items-center justify-between text-xs bg-slate-50/50 ">
                   <div>
-                    <span className="font-semibold text-slate-900 dark:text-slate-100">{p.method}</span>
+                    <span className="font-semibold text-slate-900 ">{p.method}</span>
                     <span className="text-slate-400 ml-2">({date(p.paymentDate)})</span>
                     {p.note && <div className="text-[11px] text-slate-500 mt-0.5">{p.note}</div>}
                   </div>
-                  <div className="font-bold text-emerald-600 dark:text-emerald-400">{inr(p.amount)}</div>
+                  <div className="font-bold text-emerald-600 ">{inr(p.amount)}</div>
                 </div>
               ))}
             </div>

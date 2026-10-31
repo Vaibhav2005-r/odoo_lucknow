@@ -1,5 +1,6 @@
 import { useAuth } from '../../context/AuthContext';
 import { LogOut, Menu } from 'lucide-react';
+import ThemeToggle from '../ThemeToggle';
 
 export default function Topbar({ onMenu }) {
   const { user, logout } = useAuth();
@@ -24,8 +25,9 @@ export default function Topbar({ onMenu }) {
       </div>
 
       <div className="flex items-center gap-3">
+        <ThemeToggle />
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-full bg-gradient-to-b from-slate-200 to-slate-300 flex items-center justify-center text-[12px] font-semibold text-slate-700 ring-1 ring-black/5">
+          <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center text-[12px] font-semibold text-brand-700 ring-1 ring-brand-200/60">
             {initials}
           </div>
           <div className="hidden sm:flex items-center gap-2 text-sm">

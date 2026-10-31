@@ -1,5 +1,6 @@
 import Avatar from './Avatar';
 import BrandPanel from './BrandPanel';
+import ThemeToggle from '../ThemeToggle';
 
 /**
  * Shared layout for sign in / sign up / password pages: animated brand panel on the left (large screens),
@@ -11,6 +12,7 @@ export default function AuthShell({ title, subtitle, mood = 'idle', look = null,
       <BrandPanel />
 
       <main className="auth-side relative flex items-center justify-center px-5 py-10 sm:px-10">
+        <ThemeToggle className="absolute right-5 top-5 sm:right-8 sm:top-6" />
         <div className="w-full max-w-[420px]">
           <div className="flex flex-col items-center text-center">
             <Avatar mood={mood} look={look} size={150} className="auth-avatar" />
