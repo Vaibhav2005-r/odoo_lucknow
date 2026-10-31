@@ -15,7 +15,7 @@ export const MySubscriptions = placeholder('My subscriptions');  // A
 export const PortalSubscription = placeholder('Subscription');   // A
 export const MyInvoices = placeholder('My invoices');            // A
 export const PortalInvoice = placeholder('Invoice');             // A
-export const Profile = placeholder('Profile');                   // A
+export { default as Profile } from './portal/Profile';
 export const ProductList = placeholder('Products');              // B
 export const ProductForm = placeholder('Product');               // B
 export const PlanList = placeholder('Plans');                    // B

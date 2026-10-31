@@ -77,6 +77,99 @@ router.get('/', requireRole('ADMIN', 'STAFF'), validate(listQuerySchema, 'query'
   });
 });
 
+// GET /api/customers/me - Current customer views own profile
+router.get('/me', async (req, res) => {
+  let customerId = req.user.customerId;
+  if (!customerId) {
+    const customer = await prisma.customer.findFirst({
+      where: {
+        OR: [
+          { userId: req.user.id },
+          { email: req.user.email },
+        ],
+      },
+      select: { id: true },
+    });
+    if (customer) customerId = customer.id;
+  }
+
+  if (!customerId) {
+    throw httpError(404, 'No customer profile linked to your user account');
+  }
+
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    include: {
+      user: {
+        select: { id: true, email: true, isActive: true },
+      },
+      _count: {
+        select: { subscriptions: true, invoices: true, payments: true },
+      },
+    },
+  });
+
+  if (!customer) throw httpError(404, 'Customer record not found');
+
+  const outstandingInvoices = await prisma.invoice.findMany({
+    where: { customerId, status: 'CONFIRMED' },
+    select: { amountTotal: true, amountPaid: true },
+  });
+
+  const outstanding = outstandingInvoices.reduce(
+    (sum, inv) => sum + (Number(inv.amountTotal) - Number(inv.amountPaid)),
+    0
+  );
+
+  res.json({
+    data: {
+      ...customer,
+      outstandingAmount: Math.max(0, Math.round(outstanding * 100) / 100),
+    },
+  });
+});
+
+// PATCH /api/customers/me - Current customer updates own profile
+router.patch('/me', validate(updateCustomerSchema), async (req, res) => {
+  let customerId = req.user.customerId;
+  if (!customerId) {
+    const customer = await prisma.customer.findFirst({
+      where: {
+        OR: [
+          { userId: req.user.id },
+          { email: req.user.email },
+        ],
+      },
+      select: { id: true },
+    });
+    if (customer) customerId = customer.id;
+  }
+
+  if (!customerId) {
+    throw httpError(404, 'No customer profile linked to your user account');
+  }
+
+  // Restrict customer role from modifying email or gstin directly
+  if (req.user.role === 'CUSTOMER') {
+    delete req.body.email;
+    delete req.body.gstin;
+  }
+
+  const updated = await prisma.customer.update({
+    where: { id: customerId },
+    data: req.body,
+  });
+
+  if (req.body.name && req.user.id) {
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { name: req.body.name },
+    }).catch(() => {});
+  }
+
+  res.json({ data: updated });
+});
+
 // GET /api/customers/:id - Admin/Staff or Customer viewing own profile
 router.get('/:id', async (req, res) => {
   const id = paramId(req);
