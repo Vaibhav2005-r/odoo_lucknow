@@ -561,23 +561,36 @@ t('payments ledger: filter by method and date range', async () => {
 // ---------------------------------------------------------------- reports
 
 t('reports: summary figures agree with the underlying records', async () => {
-  const r = await call('staff', 'GET', `/reports/summary?from=2000-01-01&to=${iso(0)}`);
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  const s = r.body;
+  // Other test files write to the same database while this runs, so compare a snapshot: read the report and the raw
+  // records together and retry if something moved in between. A real mismatch fails every attempt.
+  const check = async () => {
+    const r = await call('staff', 'GET', `/reports/summary?from=2000-01-01&to=${iso(0)}`);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const s = r.body;
 
-  const active = await prisma.subscription.count({ where: { status: 'ACTIVE', isPaused: false } });
-  assert.equal(s.activeSubscriptions, active, 'active subscriptions');
-  assert.ok(Math.abs(s.arr - s.mrr * 12) < 0.02, 'ARR = MRR x 12');
+    const active = await prisma.subscription.count({ where: { status: 'ACTIVE', isPaused: false } });
+    assert.equal(s.activeSubscriptions, active, 'active subscriptions');
+    assert.ok(Math.abs(s.arr - s.mrr * 12) < 0.02, 'ARR = MRR x 12');
 
-  const openInv = await prisma.invoice.findMany({ where: { status: 'CONFIRMED' }, select: { amountTotal: true, amountPaid: true, dueDate: true } });
-  const owed = openInv.reduce((a, i) => a + (Number(i.amountTotal) - Number(i.amountPaid)), 0);
-  const late = openInv.filter((i) => i.dueDate < today);
-  assert.ok(Math.abs(s.outstanding - owed) < 0.02, `outstanding ${s.outstanding} vs ${owed}`);
-  assert.equal(s.overdueCount, late.length);
-  assert.ok(Math.abs(s.overdueAmount - late.reduce((a, i) => a + (Number(i.amountTotal) - Number(i.amountPaid)), 0)) < 0.02);
+    const openInv = await prisma.invoice.findMany({ where: { status: 'CONFIRMED' }, select: { amountTotal: true, amountPaid: true, dueDate: true } });
+    const owed = openInv.reduce((a, i) => a + (Number(i.amountTotal) - Number(i.amountPaid)), 0);
+    const late = openInv.filter((i) => i.dueDate < today);
+    assert.ok(Math.abs(s.outstanding - owed) < 0.02, `outstanding ${s.outstanding} vs ${owed}`);
+    assert.equal(s.overdueCount, late.length);
+    assert.ok(Math.abs(s.overdueAmount - late.reduce((a, i) => a + (Number(i.amountTotal) - Number(i.amountPaid)), 0)) < 0.02);
 
-  const collected = await prisma.payment.aggregate({ _sum: { amount: true }, where: { paymentDate: { lte: today } } });
-  assert.ok(Math.abs(s.collected - Number(collected._sum.amount || 0)) < 0.02, 'collected');
+    const collected = await prisma.payment.aggregate({ _sum: { amount: true }, where: { paymentDate: { lte: today } } });
+    assert.ok(Math.abs(s.collected - Number(collected._sum.amount || 0)) < 0.02, 'collected');
+  };
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await check();
+      break;
+    } catch (e) {
+      if (attempt >= 6) throw e;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
 
   const months = await call('staff', 'GET', '/reports/revenue-by-month');
   assert.equal(months.status, 200);

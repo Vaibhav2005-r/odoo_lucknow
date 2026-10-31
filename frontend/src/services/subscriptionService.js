@@ -67,6 +67,7 @@ export function mapSubscription(s) {
     invoices: (s.invoices || []).map((i) => ({
       id: i.id,
       number: i.number,
+      kind: i.kind || 'RECURRING',
       invoiceDate: day(i.invoiceDate),
       dueDate: day(i.dueDate),
       amount: num(i.amountTotal),
@@ -75,6 +76,16 @@ export function mapSubscription(s) {
       period: i.periodStart ? `${day(i.periodStart)} to ${day(i.periodEnd)}` : '',
     })),
     invoiceCount: s._count?.invoices ?? (s.invoices || []).length,
+    pendingCredits: (s.credits || []).map((c) => {
+      const rate = (c.taxes || []).reduce((a, t) => a + Number(t.rate), 0);
+      const sub = Math.round(Number(c.unitPrice) * 100) * c.quantity;
+      return { id: c.id, description: c.description, quantity: c.quantity, amount: (sub + Math.round((sub * rate) / 100)) / 100 };
+    }),
+    pendingCreditTotal: (s.credits || []).reduce((acc, c) => {
+      const rate = (c.taxes || []).reduce((a, t) => a + Number(t.rate), 0);
+      const sub = Math.round(Number(c.unitPrice) * 100) * c.quantity;
+      return acc + (sub + Math.round((sub * rate) / 100)) / 100;
+    }, 0),
     activityLog: (s.history || []).map((h) => ({
       id: h.id,
       action: h.action,
@@ -149,8 +160,15 @@ export const subscriptionService = {
   close: (id, reason) => post(id, 'close', { reason }),
   renew: (id, expiryDate) => post(id, 'renew', expiryDate ? { expiryDate } : {}),
 
+  // The three line changes return the subscription with `.proration` attached (what was charged or credited).
   async toggleAddon(id, lineId, isActive) {
-    return mapSubscription((await api.patch(`/subscriptions/${id}/lines/${lineId}`, { isActive })).data);
+    const res = await api.patch(`/subscriptions/${id}/lines/${lineId}`, { isActive });
+    return Object.assign(mapSubscription(res.data), { proration: res.proration });
+  },
+
+  async setQuantity(id, lineId, quantity) {
+    const res = await api.patch(`/subscriptions/${id}/lines/${lineId}`, { quantity: Number(quantity) });
+    return Object.assign(mapSubscription(res.data), { proration: res.proration });
   },
 
   async addAddon(id, { productId, variantId = null, quantity = 1, unitPrice }) {
@@ -160,11 +178,18 @@ export const subscriptionService = {
       quantity: Math.max(1, Number(quantity) || 1),
       ...(unitPrice != null ? { unitPrice: Number(unitPrice) } : {}),
     };
-    return mapSubscription((await api.post(`/subscriptions/${id}/lines`, body)).data);
+    const res = await api.post(`/subscriptions/${id}/lines`, body);
+    return Object.assign(mapSubscription(res.data), { proration: res.proration });
   },
 
   async removeAddon(id, lineId) {
-    return mapSubscription((await api.delete(`/subscriptions/${id}/lines/${lineId}`)).data);
+    const res = await api.delete(`/subscriptions/${id}/lines/${lineId}`);
+    return Object.assign(mapSubscription(res.data), { proration: res.proration });
+  },
+
+  // What a change would charge or credit, without making it: { action: 'add' | 'update' | 'remove', ... }
+  async previewChange(id, change) {
+    return (await api.post(`/subscriptions/${id}/changes/preview`, change)).data;
   },
 
   async remove(id) {

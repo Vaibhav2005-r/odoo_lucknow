@@ -212,7 +212,7 @@ export default function MyInvoices() {
                           to={`/portal/invoices/${inv.id}`}
                           className="hover:text-indigo-600 flex items-center gap-1"
                         >
-                          {inv.number}
+                          {inv.number}{inv.kind === 'ADJUSTMENT' && <span className="ml-2 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">Adjustment</span>}
                         </Link>
                       </td>
                       <td className="py-3 px-4 text-slate-600 ">{date(inv.invoiceDate)}</td>

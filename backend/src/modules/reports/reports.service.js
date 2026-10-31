@@ -11,7 +11,7 @@ export async function getSummary({ from, to, planId = null }) {
   const [row] = await prisma.$queryRaw`
     SELECT
       (SELECT count(*)::int FROM "Subscription" s
-         WHERE s.status = 'ACTIVE' AND (${p}::int IS NULL OR s."planId" = ${p}::int)) AS "activeSubscriptions",
+         WHERE s.status = 'ACTIVE' AND s."isPaused" = false AND (${p}::int IS NULL OR s."planId" = ${p}::int)) AS "activeSubscriptions",
       (SELECT coalesce(sum(pay.amount), 0)::float8 FROM "Payment" pay
          JOIN "Invoice" i ON i.id = pay."invoiceId" LEFT JOIN "Subscription" s ON s.id = i."subscriptionId"
          WHERE pay."paymentDate" BETWEEN ${from}::date AND ${to}::date

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { subscriptionService } from '../../services/subscriptionService';
+import { describeProration, useProrationFlow } from '../../components/ProrationDialog';
 import { productService } from '../../services/productService';
 import { inr, date } from '../../lib/format';
 
@@ -39,6 +40,7 @@ export default function SubscriptionDetail() {
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'lines', 'invoices', 'activity'
+  const { ask, dialog } = useProrationFlow('staff');
 
   // Modals
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -90,9 +92,12 @@ export default function SubscriptionDetail() {
   // Runs one lifecycle call and swaps in the fresh subscription the server returns.
   const run = async (fn, successMessage, after) => {
     try {
-      setSubscription(await fn());
+      const updated = await fn();
+      setSubscription(updated);
       if (after) after();
-      if (successMessage) toast.success(successMessage);
+      const money = describeProration(updated?.proration);
+      if (money) toast.success(money, { duration: 6000 });
+      else if (successMessage) toast.success(successMessage);
     } catch (err) {
       toast.error(err.message || 'Action failed');
     }
@@ -133,31 +138,54 @@ export default function SubscriptionDetail() {
     );
   };
 
-  // Line Items Operations
+  // Line Items Operations. A change in the middle of a billing period is prorated: the dialog shows the price first.
+  const lineName = (lineId) => subscription.lines.find((l) => l.id === lineId)?.name || 'this item';
+
   const handleToggleAddon = (lineId, currentActive) =>
-    run(
-      () => subscriptionService.toggleAddon(subscription.id, lineId, !currentActive),
-      `Add-on ${!currentActive ? 'enabled' : 'disabled'}`,
-    );
+    ask({
+      title: `${currentActive ? 'Switch off' : 'Switch on'} ${lineName(lineId)}`,
+      confirmLabel: currentActive ? 'Switch off' : 'Switch on',
+      getPreview: () => subscriptionService.previewChange(subscription.id, { action: 'update', lineId, isActive: !currentActive }),
+      perform: () =>
+        run(() => subscriptionService.toggleAddon(subscription.id, lineId, !currentActive), `Add-on ${!currentActive ? 'enabled' : 'disabled'}`),
+    });
+
+  const handleQuantity = (line, quantity) => {
+    if (quantity < 1) return;
+    ask({
+      title: `Change ${line.name} to ${quantity}`,
+      confirmLabel: 'Update quantity',
+      getPreview: () => subscriptionService.previewChange(subscription.id, { action: 'update', lineId: line.id, quantity }),
+      perform: () => run(() => subscriptionService.setQuantity(subscription.id, line.id, quantity), 'Quantity updated'),
+    });
+  };
 
   const handleRemoveAddon = (lineId) =>
-    run(() => subscriptionService.removeAddon(subscription.id, lineId), 'Add-on removed from subscription');
+    ask({
+      title: `Remove ${lineName(lineId)}`,
+      confirmLabel: 'Remove',
+      getPreview: () => subscriptionService.previewChange(subscription.id, { action: 'remove', lineId }),
+      perform: () => run(() => subscriptionService.removeAddon(subscription.id, lineId), 'Add-on removed from subscription'),
+    });
 
   const handleAddAddon = (e) => {
     e.preventDefault();
     const prod = availableProducts.find((p) => p.id === Number(newAddonId));
     if (!prod) return;
     const price = Number(newAddonPrice);
-    return run(
-      () =>
-        subscriptionService.addAddon(subscription.id, {
-          productId: prod.id,
-          quantity: Number(newAddonQty) || 1,
-          ...(price >= 0 && price !== prod.salesPrice ? { unitPrice: price } : {}),
-        }),
-      `Attached "${prod.name}" successfully!`,
-      () => setShowAddAddonModal(false),
-    );
+    const unitPrice = price >= 0 && price !== prod.salesPrice ? price : undefined;
+    const quantity = Number(newAddonQty) || 1;
+    return ask({
+      title: `Attach ${prod.name}`,
+      confirmLabel: 'Attach',
+      getPreview: () => subscriptionService.previewChange(subscription.id, { action: 'add', productId: prod.id, quantity, ...(unitPrice != null ? { unitPrice } : {}) }),
+      perform: () =>
+        run(
+          () => subscriptionService.addAddon(subscription.id, { productId: prod.id, quantity, ...(unitPrice != null ? { unitPrice } : {}) }),
+          `Attached "${prod.name}" successfully!`,
+          () => setShowAddAddonModal(false),
+        ),
+    });
   };
 
   if (loading) {
@@ -381,6 +409,16 @@ export default function SubscriptionDetail() {
         </div>
       </div>
 
+      {subscription.pendingCreditTotal > 0 && (
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <span className="font-semibold">{inr(subscription.pendingCreditTotal)} credit</span>
+          <span>
+            for {subscription.pendingCredits.length} change{subscription.pendingCredits.length === 1 ? '' : 's'} made part-way through the period will be
+            taken off the next invoice automatically.
+          </span>
+        </div>
+      )}
+
       {/* Tabs Navigation */}
       <div className="border-b border-slate-200 flex items-center gap-6 text-sm font-semibold text-slate-500">
         <button
@@ -602,7 +640,32 @@ export default function SubscriptionDetail() {
                         {line.type}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-center font-mono">{line.quantity}</td>
+                    <td className="py-3 px-4 text-center font-mono">
+                      {subscription.status === 'CLOSED' || !line.isActive ? (
+                        line.quantity
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label={`Decrease ${line.name}`}
+                            disabled={line.quantity <= 1}
+                            onClick={() => handleQuantity(line, line.quantity - 1)}
+                            className="h-5 w-5 rounded border border-slate-300 text-slate-500 hover:bg-slate-100 disabled:opacity-30"
+                          >
+                            -
+                          </button>
+                          <span className="w-6 text-center">{line.quantity}</span>
+                          <button
+                            type="button"
+                            aria-label={`Increase ${line.name}`}
+                            onClick={() => handleQuantity(line, line.quantity + 1)}
+                            className="h-5 w-5 rounded border border-slate-300 text-slate-500 hover:bg-slate-100"
+                          >
+                            +
+                          </button>
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3 px-4 text-right font-medium text-slate-800">
                       {inr(line.unitPrice)}
                     </td>
@@ -680,7 +743,12 @@ export default function SubscriptionDetail() {
                 <tbody className="divide-y divide-slate-100">
                   {subscription.invoices.map((inv) => (
                     <tr key={inv.id} className="hover:bg-slate-50/75">
-                      <td className="py-3 px-4 font-mono font-bold text-brand-600">{inv.number}</td>
+                      <td className="py-3 px-4 font-mono font-bold text-brand-600">
+                        {inv.number}
+                        {inv.kind === 'ADJUSTMENT' && (
+                          <span className="ml-2 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 font-sans text-[10px] font-semibold text-brand-700">Prorated</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-slate-700">{date(inv.invoiceDate)}</td>
                       <td className="py-3 px-4 text-slate-700">{date(inv.dueDate)}</td>
                       <td className="py-3 px-4 text-slate-500">{inv.period || '—'}</td>
@@ -909,7 +977,7 @@ export default function SubscriptionDetail() {
           </div>
         </div>
       )}
+      {dialog}
     </div>
   );
 }
-

@@ -95,6 +95,20 @@ async function syncVariants(tx, productId, variants) {
   }
 }
 
+// GET /api/products/addons - optional add-ons a customer can add to their own subscription (price, tax, variants)
+router.get('/addons', async (req, res) => {
+  const rows = await prisma.product.findMany({
+    where: { type: 'ADDON', isActive: true },
+    orderBy: { name: 'asc' },
+    select: {
+      id: true, name: true, notes: true, salesPrice: true,
+      taxes: { where: { isActive: true }, select: { name: true, rate: true } },
+      variants: { where: { isActive: true }, select: { id: true, attribute: true, value: true, extraPrice: true }, orderBy: { id: 'asc' } },
+    },
+  });
+  res.json({ data: rows });
+});
+
 // GET /api/products
 router.get('/', requireRole('ADMIN', 'STAFF'), validate(listQuery, 'query'), async (req, res) => {
   const { search, type, status } = req.valid.query;

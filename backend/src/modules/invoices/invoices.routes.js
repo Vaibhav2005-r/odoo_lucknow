@@ -70,6 +70,7 @@ router.get('/', validate(listQuerySchema, 'query'), async (req, res) => {
       select: {
         id: true,
         number: true,
+        kind: true,
         status: true,
         invoiceDate: true,
         dueDate: true,

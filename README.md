@@ -18,6 +18,7 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 - **Indian GST** — invoices are split into CGST + SGST (customer in our state) or IGST (another state), decided by the customer's state or GSTIN. Taxes have a type (GST or other, such as a cess), products carry HSN/SAC codes, GSTINs are validated, and a GST summary (by month and by rate, with CSV export) is ready for your accountant.
 - **Automatic reminders** — customers are e-mailed 3 days before an invoice is due, 1, 7, 14 and 30 days after it is overdue, and 30 and 7 days before a subscription expires. Each reminder is sent once, in the daytime, and a mail outage never loses one.
 - **Online payments** — customers pay a confirmed invoice from the portal with Razorpay (UPI, cards, net banking). Without Razorpay keys a built-in test checkout is used for demos. Payments are confirmed by signature and by webhook, and can never be recorded twice.
+- **Proration** — adding, removing, switching off or changing the quantity of a line part-way through a billing period charges (or credits) only the days left. Staff and customers see the exact amount in a confirmation dialog first. A charge becomes an adjustment invoice; a reduction becomes a credit that is taken off the next invoice and never takes an invoice below zero. Customers manage their own add-ons and can renew from the portal.
 - **Reports** — active subscriptions, MRR/ARR, revenue collected, amount owed and overdue invoices, with filters.
 
 ## Screenshots
@@ -257,6 +258,7 @@ npm test
 | `catalog-subscriptions.test.js` | products, variants, plans, templates, the full subscription lifecycle |
 | `features.test.js` | every feature in the brief against a real database: signup, email confirmation and password rules, reset by e-mail (a small SMTP sink stands in for Mailpit), roles, billing catch-up and no double billing, daily/weekly/monthly/yearly periods, pause and resume, plan rules and auto-close, taxes, discounts (limits, dates, minimums), invoices, payments, overdue, reconcile, portal isolation and reports |
 | `gst.test.js` | GSTIN rules, CGST/SGST/IGST splitting (including odd paise and cess), invoices through the real billing engine for same-state and other-state customers, HSN/SAC, the GST summary and its CSV |
+| `proration.test.js`, `proration-billing.test.js` | day counting and rounding, charges and credits, GST split on adjustments, credits applied once on the next invoice, no change when nothing is billed yet, paused or closed subscriptions, previews that change nothing, customer permissions, concurrent changes |
 | `reminders.test.js` | every reminder stage, once only, retries after a failed send, the mail-outage breaker, the per-run cap, renewal reminders |
 | `checkout.test.js` | online payments: signatures, the test gateway, a stubbed Razorpay (orders, browser confirmation, webhooks, replays, forged requests), races, and money that cannot be applied |
 | `invoice-pdf.test.js` | amount in words (lakh/crore), the tax rows, every fact printed on the invoice, valid single and multi-page PDFs with the font embedded, access rules for downloads, and the PDF attached to the e-mail |
@@ -264,7 +266,7 @@ npm test
 
 The database-backed suites need the seeded database and skip themselves when it is not reachable. The performance suite also needs the bulk data below.
 
-The same steps run on every push and pull request in GitHub Actions (`.github/workflows/ci.yml`): create the database from the committed migration, seed it, add 2,500 subscriptions so the performance test runs too, run all tests, and build the frontend.
+The same steps run on every push and pull request in GitHub Actions (`.github/workflows/ci.yml`): create the database from the committed migrations, seed it, add 2,500 subscriptions so the performance test runs too, run all tests, and build the frontend.
 
 ### Large data set
 
@@ -329,6 +331,14 @@ All routes are under `/api` and need a login except `/api/auth`.
 - Billing periods are counted from the subscription start date (31 Jan, 28 Feb, 31 Mar and so on).
 - A unique constraint on subscription and period start makes double billing impossible.
 - Invoice and subscription numbers are sequential per year (`INV/2026/00001`, `SUB/2026/00001`).
+
+## Proration rules
+
+- Applies to ACTIVE, un-paused subscriptions whose current period has already been invoiced. Before that, a change simply shows up on the next regular invoice.
+- The charge is the line's price for the remaining days of the current period (today counts), with the line's own taxes and the same CGST/SGST/IGST split as any invoice.
+- Staff changes create a draft adjustment invoice; a customer's own add-on changes create a confirmed one they can pay straight away.
+- Reductions are stored as credits and applied first-in-first-out as negative lines on the next regular invoice, never below zero. Discounts are not prorated.
+- Every change can be previewed (`POST /api/subscriptions/:id/changes/preview`) without touching anything.
 
 ## Third-party fonts
 

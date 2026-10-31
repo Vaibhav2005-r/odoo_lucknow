@@ -57,6 +57,16 @@ enum TaxKind {
   OTHER // charged as is (cess, VAT ...)
 }
 
+enum InvoiceKind {
+  RECURRING // the regular invoice for a billing period
+  ADJUSTMENT // a prorated charge for a change made in the middle of a period
+}
+
+enum CreditStatus {
+  PENDING // waiting to be taken off the next invoice
+  APPLIED
+}
+
 enum NotificationKind {
   INVOICE_DUE_SOON
   INVOICE_OVERDUE
@@ -272,31 +282,31 @@ model Discount {
 // ---------- Sales ----------
 
 model Subscription {
-  id              Int                @id @default(autoincrement())
-  number          String             @unique // SUB/2026/00001
+  id              Int                  @id @default(autoincrement())
+  number          String               @unique // SUB/2026/00001
   customerId      Int
-  customer        Customer           @relation(fields: [customerId], references: [id])
+  customer        Customer             @relation(fields: [customerId], references: [id])
   planId          Int
-  plan            Plan               @relation(fields: [planId], references: [id])
+  plan            Plan                 @relation(fields: [planId], references: [id])
   templateId      Int?
-  template        QuotationTemplate? @relation(fields: [templateId], references: [id])
+  template        QuotationTemplate?   @relation(fields: [templateId], references: [id])
   paymentTermId   Int
-  paymentTerm     PaymentTerm        @relation(fields: [paymentTermId], references: [id])
+  paymentTerm     PaymentTerm          @relation(fields: [paymentTermId], references: [id])
   discountId      Int?
-  discount        Discount?          @relation(fields: [discountId], references: [id])
-  status          SubscriptionStatus @default(DRAFT)
-  startDate       DateTime           @db.Date
-  expiryDate      DateTime           @db.Date // last covered day (inclusive)
-  quoteValidUntil DateTime?          @db.Date
-  isPaused        Boolean            @default(false)
-  pausedAt        DateTime?          @db.Date
-  nextPeriodIndex Int                @default(0) // next billing period to invoice (0 = first)
-  nextInvoiceDate DateTime?          @db.Date // start of that period (null = nothing left to bill)
-  amountSubtotal  Decimal            @default(0) @db.Decimal(12, 2)
-  amountDiscount  Decimal            @default(0) @db.Decimal(12, 2)
-  amountUntaxed   Decimal            @default(0) @db.Decimal(12, 2)
-  amountTax       Decimal            @default(0) @db.Decimal(12, 2)
-  amountTotal     Decimal            @default(0) @db.Decimal(12, 2)
+  discount        Discount?            @relation(fields: [discountId], references: [id])
+  status          SubscriptionStatus   @default(DRAFT)
+  startDate       DateTime             @db.Date
+  expiryDate      DateTime             @db.Date // last covered day (inclusive)
+  quoteValidUntil DateTime?            @db.Date
+  isPaused        Boolean              @default(false)
+  pausedAt        DateTime?            @db.Date
+  nextPeriodIndex Int                  @default(0) // next billing period to invoice (0 = first)
+  nextInvoiceDate DateTime?            @db.Date // start of that period (null = nothing left to bill)
+  amountSubtotal  Decimal              @default(0) @db.Decimal(12, 2)
+  amountDiscount  Decimal              @default(0) @db.Decimal(12, 2)
+  amountUntaxed   Decimal              @default(0) @db.Decimal(12, 2)
+  amountTax       Decimal              @default(0) @db.Decimal(12, 2)
+  amountTotal     Decimal              @default(0) @db.Decimal(12, 2)
   notes           String?
   closedAt        DateTime?
   closeReason     String?
@@ -304,8 +314,9 @@ model Subscription {
   invoices        Invoice[]
   history         SubscriptionLog[]
   notifications   NotificationLog[]
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  credits         SubscriptionCredit[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   @@index([status])
   @@index([customerId])
@@ -352,31 +363,32 @@ model SubscriptionLog {
 // ---------- Billing ----------
 
 model Invoice {
-  id                 Int               @id @default(autoincrement())
-  number             String            @unique // INV/2026/00001
+  id                 Int                  @id @default(autoincrement())
+  number             String               @unique // INV/2026/00001
+  kind               InvoiceKind          @default(RECURRING)
   subscriptionId     Int?
-  subscription       Subscription?     @relation(fields: [subscriptionId], references: [id])
+  subscription       Subscription?        @relation(fields: [subscriptionId], references: [id])
   customerId         Int
-  customer           Customer          @relation(fields: [customerId], references: [id])
-  status             InvoiceStatus     @default(DRAFT)
-  invoiceDate        DateTime          @db.Date
-  dueDate            DateTime          @db.Date
-  periodStart        DateTime?         @db.Date
-  periodEnd          DateTime?         @db.Date
-  amountSubtotal     Decimal           @db.Decimal(12, 2)
-  amountDiscount     Decimal           @default(0) @db.Decimal(12, 2)
-  amountUntaxed      Decimal           @db.Decimal(12, 2)
-  amountTax          Decimal           @db.Decimal(12, 2)
-  amountTotal        Decimal           @db.Decimal(12, 2)
-  amountPaid         Decimal           @default(0) @db.Decimal(12, 2)
-  appliedDiscountIds Int[]             @default([])
+  customer           Customer             @relation(fields: [customerId], references: [id])
+  status             InvoiceStatus        @default(DRAFT)
+  invoiceDate        DateTime             @db.Date
+  dueDate            DateTime             @db.Date
+  periodStart        DateTime?            @db.Date
+  periodEnd          DateTime?            @db.Date
+  amountSubtotal     Decimal              @db.Decimal(12, 2)
+  amountDiscount     Decimal              @default(0) @db.Decimal(12, 2)
+  amountUntaxed      Decimal              @db.Decimal(12, 2)
+  amountTax          Decimal              @db.Decimal(12, 2)
+  amountTotal        Decimal              @db.Decimal(12, 2)
+  amountPaid         Decimal              @default(0) @db.Decimal(12, 2)
+  appliedDiscountIds Int[]                @default([])
   supplierGstin      String? // our GSTIN at invoice time
   placeOfSupply      String? // GST state code of the customer at invoice time
-  interState         Boolean           @default(false) // true -> IGST, false -> CGST + SGST
-  amountCgst         Decimal           @default(0) @db.Decimal(12, 2)
-  amountSgst         Decimal           @default(0) @db.Decimal(12, 2)
-  amountIgst         Decimal           @default(0) @db.Decimal(12, 2)
-  amountOtherTax     Decimal           @default(0) @db.Decimal(12, 2)
+  interState         Boolean              @default(false) // true -> IGST, false -> CGST + SGST
+  amountCgst         Decimal              @default(0) @db.Decimal(12, 2)
+  amountSgst         Decimal              @default(0) @db.Decimal(12, 2)
+  amountIgst         Decimal              @default(0) @db.Decimal(12, 2)
+  amountOtherTax     Decimal              @default(0) @db.Decimal(12, 2)
   customerSnapshot   Json? // name, email, company, address, gstin at invoice time
   notes              String?
   confirmedAt        DateTime?
@@ -386,9 +398,10 @@ model Invoice {
   lines              InvoiceLine[]
   payments           Payment[]
   paymentIntents     PaymentIntent[]
+  appliedCredits     SubscriptionCredit[]
   notifications      NotificationLog[]
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   @@unique([subscriptionId, periodStart]) // ← nothing is billed twice
   @@index([status, dueDate])
@@ -485,4 +498,30 @@ model PaymentIntent {
   paidAt            DateTime?
 
   @@index([invoiceId])
+}
+
+// ---------- Proration ----------
+
+// Money owed back to a customer who cut seats or switched an add-on off in the middle of a period. It is taken off
+// that subscription's next regular invoice (as a negative line, with the same taxes) until it is used up.
+model SubscriptionCredit {
+  id             Int          @id @default(autoincrement())
+  subscriptionId Int
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  status         CreditStatus @default(PENDING)
+  description    String
+  productId      Int?
+  hsnSac         String?
+  quantity       Int // how many units are credited
+  unitPrice      Decimal      @db.Decimal(12, 2) // prorated price of one unit, before tax
+  taxes          Json         @default("[]") // [{ name, rate, kind }] as they were when the credit was created
+  periodStart    DateTime?    @db.Date // the stretch of the period that was given back
+  periodEnd      DateTime?    @db.Date
+  invoiceId      Int? // the invoice it was finally taken off
+  invoice        Invoice?     @relation(fields: [invoiceId], references: [id])
+  createdById    Int?
+  createdAt      DateTime     @default(now())
+  appliedAt      DateTime?
+
+  @@index([subscriptionId, status])
 }

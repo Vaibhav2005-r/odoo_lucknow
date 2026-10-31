@@ -4,7 +4,8 @@ import { env } from '../../config/env.js';
 import { httpError } from '../../lib/http-error.js';
 import { nextNumber } from '../../lib/sequence.js';
 import { billSubscription } from '../billing/billing.service.js';
-import { recalcSubscription } from '../billing/pricing.js';
+import { SUB_INCLUDE, recalcSubscription } from '../billing/pricing.js';
+import { applyProration, planProration, summarise } from './proration.service.js';
 
 const today = () => todayIn(env.APP_TZ);
 
@@ -297,62 +298,82 @@ export async function autoCloseExpired(asOf = today()) {
 }
 
 // ---------- Lines on an existing subscription ----------
+//
+// Changing the lines of a subscription that is already being billed is prorated: more units cost the remaining
+// part of the current period now (an adjustment invoice), fewer units give the unused part back (a credit taken off
+// the next invoice). Pass { dryRun: true } to see the figures without changing anything.
 
-export async function addLine(id, input, user) {
+const lockSubscription = (tx, id) => tx.$queryRaw`SELECT id FROM "Subscription" WHERE id = ${id} FOR UPDATE`;
+const effectiveQty = (l) => (l.isActive ? l.quantity : 0);
+
+async function loadForChange(tx, id) {
+  await lockSubscription(tx, id); // changes, billing runs and other changes take turns
+  const sub = await tx.subscription.findUnique({ where: { id }, include: SUB_INCLUDE });
+  if (!sub) throw httpError(404, 'Subscription not found');
+  if (sub.status === 'CLOSED') throw httpError(409, 'Closed subscriptions cannot be changed');
+  return sub;
+}
+
+const asLine = (l) => ({ description: l.description, productId: l.productId, unitPrice: l.unitPrice, taxes: l.taxes, hsnSac: l.product?.hsnSac ?? null });
+const invoiceInfo = (inv) => (inv ? { id: inv.id, number: inv.number, status: inv.status } : undefined);
+
+export async function addLine(id, input, user, { dryRun = false } = {}) {
   return prisma.$transaction(async (tx) => {
-    const s = await tx.subscription.findUnique({ where: { id }, include: { plan: true } });
-    if (!s) throw httpError(404, 'Subscription not found');
-    if (s.status === 'CLOSED') throw httpError(409, 'Closed subscriptions cannot be changed');
-    const line = await buildLine(tx, s.plan, input);
+    const sub = await loadForChange(tx, id);
+    const line = await buildLine(tx, sub.plan, input);
+    const taxes = await tx.tax.findMany({ where: { id: { in: line.taxes.connect.map((t) => t.id) } } });
+    const product = await tx.product.findUnique({ where: { id: line.productId }, select: { hsnSac: true } });
+    const plan = planProration(sub, [{ line: { description: line.description, productId: line.productId, unitPrice: line.unitPrice, taxes, hsnSac: product?.hsnSac }, deltaQty: line.quantity }]);
+    if (dryRun) return { proration: summarise(plan) };
+
     await tx.subscriptionLine.create({ data: { ...line, subscriptionId: id } });
-    await tx.subscriptionLog.create({
-      data: { subscriptionId: id, action: 'ADDON_ADDED', note: line.description, userId: user?.id ?? null },
-    });
-    return recalcSubscription(tx, id, today());
+    await tx.subscriptionLog.create({ data: { subscriptionId: id, action: 'ADDON_ADDED', note: line.description, userId: user?.id ?? null } });
+    const subscription = await recalcSubscription(tx, id, today());
+    const done = await applyProration(tx, sub, plan, user);
+    return { subscription, proration: summarise(plan, { invoice: invoiceInfo(done.invoice) }) };
   });
 }
 
-export async function updateLine(id, lineId, input, user) {
+export async function updateLine(id, lineId, input, user, { dryRun = false } = {}) {
   return prisma.$transaction(async (tx) => {
-    const s = await tx.subscription.findUnique({ where: { id }, include: { plan: true } });
-    if (!s) throw httpError(404, 'Subscription not found');
-    if (s.status === 'CLOSED') throw httpError(409, 'Closed subscriptions cannot be changed');
-    const line = await tx.subscriptionLine.findFirst({ where: { id: lineId, subscriptionId: id } });
+    const sub = await loadForChange(tx, id);
+    const line = sub.lines.find((l) => l.id === lineId);
     if (!line) throw httpError(404, 'Line not found');
 
-    const base = isBaseLine(line, s.plan);
+    const base = isBaseLine(line, sub.plan);
     if (base && input.isActive === false) throw httpError(409, 'The plan line cannot be switched off');
-    if (base && input.quantity != null && input.quantity < s.plan.minQuantity) {
-      throw httpError(422, `This plan needs a minimum quantity of ${s.plan.minQuantity}`);
+    if (base && input.quantity != null && input.quantity < sub.plan.minQuantity) {
+      throw httpError(422, `This plan needs a minimum quantity of ${sub.plan.minQuantity}`);
     }
 
-    await tx.subscriptionLine.update({
-      where: { id: lineId },
-      data: {
-        ...(input.isActive != null ? { isActive: input.isActive } : {}),
-        ...(input.quantity != null ? { quantity: input.quantity } : {}),
-      },
-    });
+    const nextActive = input.isActive ?? line.isActive;
+    const nextQty = input.quantity ?? line.quantity;
+    const plan = planProration(sub, [{ line: asLine(line), deltaQty: (nextActive ? nextQty : 0) - effectiveQty(line) }]);
+    if (dryRun) return { proration: summarise(plan) };
+
+    await tx.subscriptionLine.update({ where: { id: lineId }, data: { ...(input.isActive != null ? { isActive: input.isActive } : {}), ...(input.quantity != null ? { quantity: input.quantity } : {}) } });
     const action = input.isActive == null ? 'LINE_UPDATED' : input.isActive ? 'ADDON_ON' : 'ADDON_OFF';
-    await tx.subscriptionLog.create({
-      data: { subscriptionId: id, action, note: line.description, userId: user?.id ?? null },
-    });
-    return recalcSubscription(tx, id, today());
+    await tx.subscriptionLog.create({ data: { subscriptionId: id, action, note: line.description, userId: user?.id ?? null } });
+    const subscription = await recalcSubscription(tx, id, today());
+    const done = await applyProration(tx, sub, plan, user);
+    return { subscription, proration: summarise(plan, { invoice: invoiceInfo(done.invoice) }) };
   });
 }
 
-export async function removeLine(id, lineId, user) {
+export async function removeLine(id, lineId, user, { dryRun = false } = {}) {
   return prisma.$transaction(async (tx) => {
-    const s = await tx.subscription.findUnique({ where: { id }, include: { plan: true } });
-    if (!s) throw httpError(404, 'Subscription not found');
-    if (s.status === 'CLOSED') throw httpError(409, 'Closed subscriptions cannot be changed');
-    const line = await tx.subscriptionLine.findFirst({ where: { id: lineId, subscriptionId: id } });
+    const sub = await loadForChange(tx, id);
+    const line = sub.lines.find((l) => l.id === lineId);
     if (!line) throw httpError(404, 'Line not found');
-    if (isBaseLine(line, s.plan)) throw httpError(409, 'The plan line cannot be removed');
+    if (isBaseLine(line, sub.plan)) throw httpError(409, 'The plan line cannot be removed');
+
+    const plan = planProration(sub, [{ line: asLine(line), deltaQty: -effectiveQty(line) }]);
+    if (dryRun) return { proration: summarise(plan) };
+
     await tx.subscriptionLine.delete({ where: { id: lineId } });
-    await tx.subscriptionLog.create({
-      data: { subscriptionId: id, action: 'ADDON_REMOVED', note: line.description, userId: user?.id ?? null },
-    });
-    return recalcSubscription(tx, id, today());
+    await tx.subscriptionLog.create({ data: { subscriptionId: id, action: 'ADDON_REMOVED', note: line.description, userId: user?.id ?? null } });
+    const subscription = await recalcSubscription(tx, id, today());
+    const done = await applyProration(tx, sub, plan, user);
+    return { subscription, proration: summarise(plan, { invoice: invoiceInfo(done.invoice) }) };
   });
 }

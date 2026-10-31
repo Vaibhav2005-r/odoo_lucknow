@@ -3,6 +3,7 @@ import { env } from '../../config/env.js';
 import { computeTotals, duePeriods, addPeriods, addDays, toRupees, todayIn } from '../../lib/billing-core.js';
 import { nextNumber } from '../../lib/sequence.js';
 import { placeOfSupply, splitTaxLine, taxLabel } from '../../lib/gst.js';
+import { lineAmounts, negate } from '../../lib/proration.js';
 import { SUB_INCLUDE, lineInput, loadDiscountCandidates } from './pricing.js';
 
 const state = { running: false, startedAt: null, finishedAt: null, processed: 0, invoicesCreated: 0, failed: [] };
@@ -10,6 +11,8 @@ export const billingStatus = () => ({ ...state, failed: [...state.failed] });
 
 // Creates the invoice for the next due period of one subscription. Returns true if one was created.
 async function billNextPeriod(tx, subscriptionId, asOf) {
+  // Serialise with seat / add-on changes (which prorate): one of them finishes before the other starts.
+  await tx.$queryRaw`SELECT id FROM "Subscription" WHERE id = ${subscriptionId} FOR UPDATE`;
   const sub = await tx.subscription.findUnique({ where: { id: subscriptionId }, include: SUB_INCLUDE });
   if (!sub || sub.status !== 'ACTIVE' || sub.isPaused) return false;
 
@@ -32,7 +35,20 @@ async function billNextPeriod(tx, subscriptionId, asOf) {
     splitTaxLine({ taxPaise: l.tax, taxRate: l.taxRate, gstRate: l.gstRate, interState }));
   const sumOf = (k) => split.reduce((a, x) => a + x[k], 0);
 
-  await tx.invoice.create({
+  // Money owed back for seats or add-ons removed mid-period comes off this invoice, oldest first, as negative lines
+  // with their own tax. A credit that would push the invoice below zero waits (with everything after it) for the next one.
+  const pendingCredits = await tx.subscriptionCredit.findMany({ where: { subscriptionId: sub.id, status: 'PENDING' }, orderBy: { id: 'asc' } });
+  const creditLines = [];
+  let running = totals.total;
+  for (const credit of pendingCredits) {
+    const amounts = negate(lineAmounts({ unitPrice: Number(credit.unitPrice), quantity: credit.quantity, taxes: credit.taxes, interState }));
+    if (running + amounts.total < 0) break;
+    running += amounts.total;
+    creditLines.push({ credit, amounts });
+  }
+  const creditSum = (k) => creditLines.reduce((a, { amounts }) => a + amounts[k], 0);
+
+  const invoice = await tx.invoice.create({
     data: {
       number,
       subscriptionId: sub.id,
@@ -42,18 +58,18 @@ async function billNextPeriod(tx, subscriptionId, asOf) {
       dueDate: addDays(asOf, sub.paymentTerm.dueDays),
       periodStart: period.start,
       periodEnd: period.end,
-      amountSubtotal: toRupees(totals.subtotal),
+      amountSubtotal: toRupees(totals.subtotal + creditSum('subtotal')),
       amountDiscount: toRupees(totals.discount),
-      amountUntaxed: toRupees(totals.untaxed),
-      amountTax: toRupees(totals.tax),
-      amountTotal: toRupees(totals.total),
+      amountUntaxed: toRupees(totals.untaxed + creditSum('subtotal')),
+      amountTax: toRupees(totals.tax + creditSum('tax')),
+      amountTotal: toRupees(totals.total + creditSum('total')),
       supplierGstin: env.COMPANY_GSTIN,
       placeOfSupply: supplyState,
       interState,
-      amountCgst: toRupees(sumOf('cgst')),
-      amountSgst: toRupees(sumOf('sgst')),
-      amountIgst: toRupees(sumOf('igst')),
-      amountOtherTax: toRupees(sumOf('other')),
+      amountCgst: toRupees(sumOf('cgst') + creditSum('cgst')),
+      amountSgst: toRupees(sumOf('sgst') + creditSum('sgst')),
+      amountIgst: toRupees(sumOf('igst') + creditSum('igst')),
+      amountOtherTax: toRupees(sumOf('other') + creditSum('other')),
       appliedDiscountIds: totals.appliedDiscountIds,
       customerSnapshot: {
         name: sub.customer.name,
@@ -80,10 +96,32 @@ async function billNextPeriod(tx, subscriptionId, asOf) {
           igstAmount: toRupees(split[i].igst),
           otherTaxAmount: toRupees(split[i].other),
           total: toRupees(l.total),
-        })),
+        })).concat(creditLines.map(({ credit, amounts }) => ({
+          productId: credit.productId,
+          description: `Credit: ${credit.description}`,
+          quantity: credit.quantity,
+          unitPrice: -Number(credit.unitPrice),
+          subtotal: toRupees(amounts.subtotal),
+          discountAmount: 0,
+          taxRate: amounts.taxRate,
+          taxLabel: taxLabel(credit.taxes, interState) || null,
+          taxAmount: toRupees(amounts.tax),
+          hsnSac: credit.hsnSac,
+          cgstAmount: toRupees(amounts.cgst),
+          sgstAmount: toRupees(amounts.sgst),
+          igstAmount: toRupees(amounts.igst),
+          otherTaxAmount: toRupees(amounts.other),
+          total: toRupees(amounts.total),
+        }))),
       },
     },
   });
+  if (creditLines.length) {
+    await tx.subscriptionCredit.updateMany({
+      where: { id: { in: creditLines.map((c) => c.credit.id) } },
+      data: { status: 'APPLIED', invoiceId: invoice.id, appliedAt: new Date() },
+    });
+  }
 
   // One use per invoice; refuse to go over the limit even if two invoices race.
   for (const id of totals.appliedDiscountIds) {

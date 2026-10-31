@@ -36,7 +36,7 @@ app.use(cookieParser());
 app.use(morgan('dev')); // prints the response time of every request: proof for "< 2 seconds"
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
-app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 100 }), authRoutes);
+app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, skip: (req) => req.path === '/me' }), authRoutes);
 
 app.use('/api', requireAuth); // everything below needs a login
 // who we are (printed on invoices) and the GST state list (for customer forms)

@@ -79,7 +79,7 @@ export default function PrintInvoice() {
         </div>
 
         <div className="text-right">
-          <span className="text-xs uppercase tracking-widest font-bold text-slate-400">TAX INVOICE</span>
+          <span className="text-xs uppercase tracking-widest font-bold text-slate-400">{invoice.kind === 'ADJUSTMENT' ? 'TAX INVOICE · ADJUSTMENT' : 'TAX INVOICE'}</span>
           <h2 className="text-2xl font-bold font-mono text-slate-900 mt-0.5">{invoice.number}</h2>
           <div className="mt-2 text-xs text-slate-600 space-y-0.5">
             <div><span className="font-semibold text-slate-700">Invoice Date:</span> {date(invoice.invoiceDate)}</div>

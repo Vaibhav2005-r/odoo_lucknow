@@ -139,6 +139,7 @@ export default function InvoiceDetail() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold font-mono text-slate-900">{invoice.number}</h1>
+              {invoice.kind === 'ADJUSTMENT' && <span className="ml-2 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">Adjustment</span>}
               {isPaid && (
                 <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   <CheckCircle className="w-3.5 h-3.5" /> Paid

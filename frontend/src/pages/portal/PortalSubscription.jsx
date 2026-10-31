@@ -20,6 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import PortalAddons from '../../components/PortalAddons';
 
 export default function PortalSubscription() {
   const { id } = useParams();
@@ -48,6 +49,22 @@ export default function PortalSubscription() {
   useEffect(() => {
     if (id) fetchSubscription();
   }, [id]);
+
+  const handleRenew = async () => {
+    const next = new Date(`${String(sub.expiryDate).slice(0, 10)}T00:00:00Z`);
+    next.setUTCFullYear(next.getUTCFullYear() + 1);
+    if (!window.confirm(`Renew your subscription for another year, until ${formatDate(next)}? Billing continues on the same schedule.`)) return;
+    try {
+      setActionLoading(true);
+      await api.post(`/subscriptions/${id}/renew`, {});
+      toast.success(`Renewed until ${formatDate(next)}`);
+      await fetchSubscription();
+    } catch (err) {
+      toast.error(err.message || 'Could not renew the subscription');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handlePause = async () => {
     if (!window.confirm('Are you sure you want to pause your subscription? Billing will be temporarily held.')) {
@@ -276,6 +293,17 @@ export default function PortalSubscription() {
             </>
           )}
 
+          {sub.status === 'ACTIVE' && sub.plan?.renewable && (
+            <button
+              onClick={handleRenew}
+              disabled={actionLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-brand-200 bg-brand-50 text-brand-700 text-xs font-bold rounded-lg hover:bg-brand-100 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Renew for a year
+            </button>
+          )}
+
           {/* Close Action based on plan capabilities */}
           {sub.plan?.closable && sub.status !== 'CLOSED' && (
             <button
@@ -337,6 +365,14 @@ export default function PortalSubscription() {
           <div className="text-xs text-slate-500 mt-1">Includes applicable taxes</div>
         </div>
       </div>
+
+      {sub.credits?.length > 0 && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          You have credit from changes made part-way through this period. It is taken off your next invoice automatically.
+        </div>
+      )}
+
+      <PortalAddons sub={sub} onChanged={fetchSubscription} />
 
       {/* Itemized Order Lines Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">

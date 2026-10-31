@@ -93,6 +93,7 @@ export default function PortalInvoice() {
               <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
                 {invoice.number}
               </h1>
+              {invoice.kind === 'ADJUSTMENT' && <span className="ml-2 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">Adjustment</span>}
               {invoice.status === 'PAID' ? (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 ">
                   PAID

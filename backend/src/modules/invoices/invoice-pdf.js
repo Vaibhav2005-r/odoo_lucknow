@@ -90,6 +90,7 @@ export function buildInvoiceDocument(invoice, company = companyDetails(), today 
       ...(invoice.subscription?.number ? [['Subscription', invoice.subscription.number]] : []),
       ...(invoice.subscription?.paymentTerm?.name ? [['Payment terms', invoice.subscription.paymentTerm.name]] : []),
     ],
+    note: invoice.kind === 'ADJUSTMENT' ? invoice.notes || '' : '',
     supply: invoice.placeOfSupply
       ? `Place of supply: ${stateName(invoice.placeOfSupply)} (${invoice.placeOfSupply}). ${invoice.interState ? 'Inter-state supply, IGST applies.' : 'Intra-state supply, CGST and SGST apply.'}`
       : '',
@@ -221,6 +222,10 @@ export function renderInvoicePdf(d) {
     }
   }
   y = Math.max(by, ay) + 8;
+  if (d.note) {
+    doc.fillColor(BRAND).font('bold').fontSize(8).text(`Prorated adjustment. ${d.note}`, PAGE.m, y, { width: PAGE.w - 2 * PAGE.m });
+    y = doc.y + 4;
+  }
   if (d.supply) {
     doc.fillColor(GRAY).font('regular').fontSize(8).text(d.supply, PAGE.m, y, { width: PAGE.w - 2 * PAGE.m });
     y = doc.y + 8;

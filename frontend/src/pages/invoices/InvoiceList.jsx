@@ -313,6 +313,7 @@ export default function InvoiceList() {
                         >
                           {inv.number}
                         </Link>
+                        {inv.kind === 'ADJUSTMENT' && <span className="ml-2 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">Adjustment</span>}
                       </td>
 
                       <td className="py-3.5 px-4">

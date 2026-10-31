@@ -76,8 +76,9 @@ const FULL_INCLUDE = {
   },
   invoices: {
     orderBy: { invoiceDate: 'desc' },
-    select: { id: true, number: true, status: true, invoiceDate: true, dueDate: true, periodStart: true, periodEnd: true, amountTotal: true, amountPaid: true },
+    select: { id: true, number: true, kind: true, status: true, invoiceDate: true, dueDate: true, periodStart: true, periodEnd: true, amountTotal: true, amountPaid: true },
   },
+  credits: { where: { status: 'PENDING' }, orderBy: { id: 'asc' } },
   history: { orderBy: { createdAt: 'desc' }, take: 50 },
 };
 const fetchFull = (id) => prisma.subscription.findUnique({ where: { id }, include: FULL_INCLUDE });
@@ -509,37 +510,60 @@ router.post('/:id/renew', validate(renewSchema), async (req, res) => {
   res.json({ data: await fetchFull(id), message: 'Subscription renewed' });
 });
 
-// POST /api/subscriptions/:id/lines - add a product / add-on
-router.post('/:id/lines', validate(lineInput), async (req, res) => {
+// One place that decides who may change what, shared by the real endpoints and by the price preview.
+// Customers may add optional add-ons (at list price) and switch them on and off; everything else is staff only.
+async function runChange(req, { action, lineId = null, body = {}, dryRun = false }) {
   const id = paramId(req);
-  const sub = await loadOwned(req, id);
-  if (req.user.role === 'CUSTOMER') {
-    const product = await prisma.product.findUnique({ where: { id: req.body.productId }, select: { type: true } });
-    if (product?.type !== 'ADDON') throw httpError(403, 'Customers can only add optional add-ons');
-    if (req.body.unitPrice != null) throw httpError(403, 'Customers cannot set prices');
+  await loadOwned(req, id);
+  const customer = req.user.role === 'CUSTOMER';
+  if (action === 'add') {
+    if (customer) {
+      const product = await prisma.product.findUnique({ where: { id: body.productId }, select: { type: true } });
+      if (product?.type !== 'ADDON') throw httpError(403, 'Customers can only add optional add-ons');
+      if (body.unitPrice != null) throw httpError(403, 'Customers cannot set prices');
+    }
+    return addLine(id, body, req.user, { dryRun });
   }
-  if (sub.status === 'CLOSED') throw httpError(409, 'Closed subscriptions cannot be changed');
-  await addLine(id, req.body, req.user);
-  res.status(201).json({ data: await fetchFull(id) });
+  if (action === 'update') {
+    if (customer) {
+      const line = await prisma.subscriptionLine.findFirst({ where: { id: lineId, subscriptionId: id }, include: { product: true } });
+      if (line?.product.type !== 'ADDON') throw httpError(403, 'Customers can only manage optional add-ons');
+    }
+    return updateLine(id, lineId, body, req.user, { dryRun });
+  }
+  if (customer) throw httpError(403, 'Only staff can remove lines. Switch the add-on off instead.');
+  return removeLine(id, lineId, req.user, { dryRun });
+}
+
+// POST /api/subscriptions/:id/lines - add a product / add-on (prorated when the period is already billed)
+router.post('/:id/lines', validate(lineInput), async (req, res) => {
+  const { proration } = await runChange(req, { action: 'add', body: req.body });
+  res.status(201).json({ data: await fetchFull(paramId(req)), proration });
 });
 
 // PATCH /api/subscriptions/:id/lines/:lineId - switch an add-on on/off or change its quantity
 router.patch('/:id/lines/:lineId', validate(lineUpdateSchema), async (req, res) => {
-  const id = paramId(req);
-  await loadOwned(req, id);
-  if (req.user.role === 'CUSTOMER') {
-    const line = await prisma.subscriptionLine.findFirst({ where: { id: paramId(req, 'lineId'), subscriptionId: id }, include: { product: true } });
-    if (line?.product.type !== 'ADDON') throw httpError(403, 'Customers can only manage optional add-ons');
-  }
-  await updateLine(id, paramId(req, 'lineId'), req.body, req.user);
-  res.json({ data: await fetchFull(id) });
+  const { proration } = await runChange(req, { action: 'update', lineId: paramId(req, 'lineId'), body: req.body });
+  res.json({ data: await fetchFull(paramId(req)), proration });
 });
 
 // DELETE /api/subscriptions/:id/lines/:lineId
 router.delete('/:id/lines/:lineId', requireRole('ADMIN', 'STAFF'), async (req, res) => {
-  const id = paramId(req);
-  await removeLine(id, paramId(req, 'lineId'), req.user);
-  res.json({ data: await fetchFull(id) });
+  const { proration } = await runChange(req, { action: 'remove', lineId: paramId(req, 'lineId') });
+  res.json({ data: await fetchFull(paramId(req)), proration });
+});
+
+const previewSchema = z.discriminatedUnion('action', [
+  lineInput.extend({ action: z.literal('add') }),
+  z.object({ action: z.literal('update'), lineId: id$, isActive: z.boolean().optional(), quantity: z.coerce.number().int().min(1).optional() }),
+  z.object({ action: z.literal('remove'), lineId: id$ }),
+]);
+
+// POST /api/subscriptions/:id/changes/preview - what a line change would cost or give back, without making it
+router.post('/:id/changes/preview', validate(previewSchema), async (req, res) => {
+  const { action, lineId, ...body } = req.body;
+  const { proration } = await runChange(req, { action, lineId, body, dryRun: true });
+  res.json({ data: proration });
 });
 
 export default router;
