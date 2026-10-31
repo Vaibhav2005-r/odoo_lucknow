@@ -13,6 +13,7 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 - **Billing** — invoices are created from subscriptions (manually or by the nightly job) with customer details, lines, taxes and totals filled in. Nothing is billed twice or skipped, including missed days.
 - **Taxes and discounts** — admin-defined tax rules; fixed or percentage discounts with minimum purchase or quantity, date range and usage limit, applied automatically to products or whole subscriptions.
 - **Invoices and payments** — confirm, cancel, send and print invoices (Draft → Confirmed → Paid); record payments by method, amount, date and note; see paid, outstanding and overdue at any time.
+- **Look and feel** — light, dark or follow-the-system theme (saved per browser, no flash on load), an animated sign-in page with a reactive mascot, branded sidebar, and a hero banner with live figures on the dashboard and customer portal. Printable invoices always stay light.
 - **Reports** — active subscriptions, MRR/ARR, revenue collected, amount owed and overdue invoices, with filters.
 
 ## Screenshots
@@ -26,6 +27,13 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 | **Products and variants**<br>![Products](docs/screenshots/products.png) | **Plans**<br>![Plans](docs/screenshots/plans.png) |
 | **Quotation templates**<br>![Quotation templates](docs/screenshots/templates.png) | **Invoices** — draft, outstanding, overdue, paid<br>![Invoices](docs/screenshots/invoices.png) |
 | **Payments**<br>![Payments](docs/screenshots/payments.png) | **Run billing**<br>![Run billing](docs/screenshots/billing-run.png) |
+
+### Dark mode
+
+| | |
+|---|---|
+| **Dashboard**<br>![Dashboard in dark mode](docs/screenshots/dashboard-dark.png) | **Subscriptions**<br>![Subscriptions in dark mode](docs/screenshots/subscriptions-dark.png) |
+| **Customer portal**<br>![Portal in dark mode](docs/screenshots/portal-dark.png) | **Sign in**<br>![Sign in, dark mode](docs/screenshots/login-dark.png) |
 
 ### Customer portal
 
@@ -179,7 +187,7 @@ npm install
 npm run dev
 ```
 
-The app runs at `http://localhost:5173`.
+The app runs at `http://localhost:5173`. The sign-in page shows one-click demo-account buttons while developing; set `VITE_SHOW_DEMO_LOGINS=true` to show them in a production build.
 
 ## Demo accounts
 
