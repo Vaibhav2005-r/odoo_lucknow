@@ -11,6 +11,7 @@ import { confirmInvoices, cancelInvoice } from './invoices.service.js';
 import { recordPayment } from '../payments/payments.service.js';
 import { sendMail } from '../../lib/mailer.js';
 import { esc } from '../../lib/email.js';
+import { buildInvoiceDocument, loadInvoiceForPdf, pdfFilename, renderInvoicePdf } from './invoice-pdf.js';
 import { createCheckout, failIntent, settleIntent } from '../payments/checkout.service.js';
 import { gatewayName, getProvider, verifyCheckoutSignature } from '../payments/gateway.js';
 
@@ -355,6 +356,19 @@ router.post('/:id/checkout/mock-complete', validate(mockSchema), async (req, res
   return res.json({ data: await settleIntent({ orderId, paymentId: `pay_mock_${Date.now().toString(36)}`, method, invoiceId }) });
 });
 
+// GET /api/invoices/:id/pdf - the tax invoice as a PDF (?inline=1 shows it in the browser instead of downloading)
+router.get('/:id/pdf', async (req, res) => {
+  const invoice = await loadInvoiceForPdf(paramId(req));
+  // customers get their own invoices only, and not drafts (those are still internal)
+  const hidden = !invoice || (req.user.role === 'CUSTOMER' && (invoice.customerId !== req.user.customerId || invoice.status === 'DRAFT'));
+  if (hidden) throw httpError(404, 'Invoice not found');
+  const pdf = await renderInvoicePdf(buildInvoiceDocument(invoice));
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `${req.query.inline === '1' ? 'inline' : 'attachment'}; filename="${pdfFilename(invoice.number)}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(pdf);
+});
+
 // POST /api/invoices/:id/send - Send invoice email to customer
 router.post('/:id/send', requireRole('ADMIN', 'STAFF'), async (req, res) => {
   const id = paramId(req);
@@ -409,8 +423,18 @@ router.post('/:id/send', requireRole('ADMIN', 'STAFF'), async (req, res) => {
     </div>
   `;
 
+  // the invoice itself, as a PDF; if it cannot be produced the e-mail still goes out with the link
+  let attachments;
+  try {
+    const pdf = await renderInvoicePdf(buildInvoiceDocument(await loadInvoiceForPdf(id)));
+    attachments = [{ filename: pdfFilename(invoice.number), content: pdf, contentType: 'application/pdf' }];
+  } catch (e) {
+    console.error('[invoice pdf]', e);
+  }
+
   await sendMail({
     to: invoice.customer.email,
+    attachments,
     subject: `Invoice ${invoice.number} from ${env.COMPANY_NAME}`,
     html,
   });

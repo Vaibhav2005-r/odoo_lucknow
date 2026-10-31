@@ -14,6 +14,7 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 - **Taxes and discounts** — admin-defined tax rules; fixed or percentage discounts with minimum purchase or quantity, date range and usage limit, applied automatically to products or whole subscriptions.
 - **Invoices and payments** — confirm, cancel, send and print invoices (Draft → Confirmed → Paid); record payments by method, amount, date and note; see paid, outstanding and overdue at any time.
 - **Look and feel** — light, dark or follow-the-system theme (saved per browser, no flash on load), an animated sign-in page with a reactive mascot, branded sidebar, and a hero banner with live figures on the dashboard and customer portal. Printable invoices always stay light.
+- **Invoice PDF** — every invoice downloads as a proper tax invoice PDF (GSTINs, HSN/SAC, CGST/SGST/IGST, place of supply, amount in words, payments received, multi-page). "Send invoice" attaches it to the e-mail. Customers can download their own confirmed invoices from the portal.
 - **Indian GST** — invoices are split into CGST + SGST (customer in our state) or IGST (another state), decided by the customer's state or GSTIN. Taxes have a type (GST or other, such as a cess), products carry HSN/SAC codes, GSTINs are validated, and a GST summary (by month and by rate, with CSV export) is ready for your accountant.
 - **Automatic reminders** — customers are e-mailed 3 days before an invoice is due, 1, 7, 14 and 30 days after it is overdue, and 30 and 7 days before a subscription expires. Each reminder is sent once, in the daytime, and a mail outage never loses one.
 - **Online payments** — customers pay a confirmed invoice from the portal with Razorpay (UPI, cards, net banking). Without Razorpay keys a built-in test checkout is used for demos. Payments are confirmed by signature and by webhook, and can never be recorded twice.
@@ -43,7 +44,7 @@ One system to run plans, subscriptions and recurring billing for Brightloop Soft
 | | |
 |---|---|
 | **GST invoice** — per-line HSN/SAC, IGST for an out-of-state customer, place of supply<br>![GST invoice](docs/screenshots/invoice-gst.png) | **Pay now** — the portal checkout (test mode shown)<br>![Checkout](docs/screenshots/checkout.png) |
-| **Customer GST details** — a valid GSTIN fills in the state<br>![Customer GST fields](docs/screenshots/customer-gst.png) | |
+| **Customer GST details** — a valid GSTIN fills in the state<br>![Customer GST fields](docs/screenshots/customer-gst.png) | **Invoice PDF** — what customers receive (top of the page shown)<br>![Invoice PDF](docs/screenshots/invoice-pdf.png) |
 
 ### Customer portal
 
@@ -258,6 +259,7 @@ npm test
 | `gst.test.js` | GSTIN rules, CGST/SGST/IGST splitting (including odd paise and cess), invoices through the real billing engine for same-state and other-state customers, HSN/SAC, the GST summary and its CSV |
 | `reminders.test.js` | every reminder stage, once only, retries after a failed send, the mail-outage breaker, the per-run cap, renewal reminders |
 | `checkout.test.js` | online payments: signatures, the test gateway, a stubbed Razorpay (orders, browser confirmation, webhooks, replays, forged requests), races, and money that cannot be applied |
+| `invoice-pdf.test.js` | amount in words (lakh/crore), the tax rows, every fact printed on the invoice, valid single and multi-page PDFs with the font embedded, access rules for downloads, and the PDF attached to the e-mail |
 | `performance.test.js` | every list, search, detail and report endpoint answers in under 2 seconds with thousands of subscriptions |
 
 The database-backed suites need the seeded database and skip themselves when it is not reachable. The performance suite also needs the bulk data below.
@@ -307,7 +309,7 @@ All routes are under `/api` and need a login except `/api/auth`.
 | `/products`, `/variants`, `/plans`, `/quotation-templates` | catalog (admin writes, staff reads) |
 | `/subscriptions` | create, edit, send-quotation, confirm, activate, pause, resume, renew, close, add-on lines |
 | `/billing` | run billing, billing status |
-| `/invoices`, `/payments` | invoices and payment recording |
+| `/invoices`, `/payments` | invoices (including `/:id/pdf`) and payment recording |
 | `/reports` | summary, revenue by month, GST summary (`/gst-summary`, `/export-gst`) |
 | `/reminders` | log of automatic reminders, run them on demand (admin) |
 | `/payments/gateway`, `/invoices/:id/checkout` | online payment: which gateway is on, start a payment, confirm it |
@@ -327,3 +329,7 @@ All routes are under `/api` and need a login except `/api/auth`.
 - Billing periods are counted from the subscription start date (31 Jan, 28 Feb, 31 Mar and so on).
 - A unique constraint on subscription and period start makes double billing impossible.
 - Invoice and subscription numbers are sequential per year (`INV/2026/00001`, `SUB/2026/00001`).
+
+## Third-party fonts
+
+Invoice PDFs embed [Noto Sans](https://fonts.google.com/noto/specimen/Noto+Sans) (SIL Open Font License 1.1) from the `@fontsource/noto-sans` package, because the standard PDF fonts have no rupee sign.

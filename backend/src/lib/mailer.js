@@ -9,9 +9,9 @@ const transport = nodemailer.createTransport({
 });
 
 // Never let a mail failure break a business action. Returns true/false.
-export async function sendMail({ to, subject, html }) {
+export async function sendMail({ to, subject, html, attachments }) {
   try {
-    await transport.sendMail({ from: env.MAIL_FROM, to, subject, html });
+    await transport.sendMail({ from: env.MAIL_FROM, to, subject, html, attachments });
     return true;
   } catch (e) {
     console.error('[mail] failed:', e.message);

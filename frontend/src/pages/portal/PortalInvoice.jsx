@@ -8,6 +8,7 @@ import { useCompany } from '../../lib/useCompany';
 import {
   ArrowLeft,
   Printer,
+  Download,
   Receipt,
   Building,
   Calendar,
@@ -117,6 +118,12 @@ export default function PortalInvoice() {
             <div className="text-2xl font-extrabold text-slate-900 ">
               {unpaid > 0 ? inr(unpaid) : '₹0.00'}
             </div>
+            <a
+              href={`/api/invoices/${invoice.id}/pdf`}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700"
+            >
+              <Download className="w-3.5 h-3.5" /> Download PDF
+            </a>
           </div>
         </div>
 

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import {
   ArrowLeft,
   Printer,
+  Download,
   CheckCircle,
   Clock,
   AlertTriangle,
@@ -238,6 +239,13 @@ export default function InvoiceDetail() {
             <Printer className="w-4 h-4 text-slate-500" />
             Print
           </Link>
+          <a
+            href={`/api/invoices/${invoice.id}/pdf`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+          >
+            <Download className="w-4 h-4 text-slate-500" />
+            PDF
+          </a>
         </div>
       </div>
 
